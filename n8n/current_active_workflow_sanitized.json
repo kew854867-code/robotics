@@ -1,7 +1,7 @@
 {
-  "name": "YouTube机器人视频采集",
-  "description": null,
-  "active": false,
+  "name": "YouTube机器人视频采集｜官网核验｜X图片发布",
+  "description": "YouTube机器人热点发现、官网事实核验、官方图片获取与X图片发布主工作流",
+  "active": true,
   "isArchived": false,
   "nodes": [
     {
@@ -72,23 +72,54 @@
     },
     {
       "parameters": {
-        "tableId": "content_items",
-        "dataToSend": "autoMapInputData"
+        "method": "POST",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?on_conflict=content_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            },
+            {
+              "name": "Accept-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
       },
       "id": "3be45990-392c-4b2f-b983-ba9b872a15da",
       "name": "存入Supabase",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
         1136,
         0
       ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
       "credentials": {
         "supabaseApi": {
           "id": "RWutEuXYEHFGbcFy",
           "name": "Supabase account"
         }
-      }
+      },
+      "onError": "continueRegularOutput"
     },
     {
       "parameters": {
@@ -137,7 +168,6 @@
     },
     {
       "parameters": {
-        "method": "GET",
         "url": "https://www.googleapis.com/youtube/v3/videos",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpQueryAuth",
@@ -162,7 +192,7 @@
       "typeVersion": 4.2,
       "position": [
         560,
-        220
+        224
       ],
       "credentials": {
         "httpQueryAuth": {
@@ -170,6 +200,607 @@
           "name": "Query Auth account"
         }
       }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <DEEPSEEK_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.request_body }}",
+        "options": {}
+      },
+      "id": "7ae08f8b-153e-444d-9ef0-501bb4b75304",
+      "name": "DeepSeek双语图文生产",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        992,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.choices?.[0]?.message?.content ?? $json.content ?? $json.text ?? '';\nfunction parse(raw) {\n  if (raw && typeof raw === 'object') return raw;\n  if (typeof raw !== 'string' || !raw.trim()) return null;\n  const cleaned = raw.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  try { return JSON.parse(cleaned); } catch (_) {}\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (!m) return null;\n  try { return JSON.parse(m[0]); } catch (_) { return null; }\n}\nfunction isNonEmptyString(x) { return typeof x === 'string' && x.trim().length > 0; }\nfunction isArray(x) { return Array.isArray(x); }\nconst parsed = parse(raw);\nconst sourceItems = $('解析商业分析JSON').all();\nconst original = sourceItems[$itemIndex]?.json || $json;\nconst missing = [];\nconst requiredTop = ['content_id','source_url','editorial_angle','fact_boundary','chinese','english','image_plan','platform_adaptations','commercial_editorial_note','quality_control'];\nfor (const k of requiredTop) if (!parsed || !Object.prototype.hasOwnProperty.call(parsed,k)) missing.push(k);\nif (parsed) {\n  for (const k of ['confirmed_facts','inferences','unknowns']) if (!isArray(parsed.fact_boundary?.[k])) missing.push(`fact_boundary.${k}`);\n  for (const k of ['title','subtitle','body','hook','discussion_question']) if (!isNonEmptyString(parsed.chinese?.[k])) missing.push(`chinese.${k}`);\n  if (!isArray(parsed.chinese?.hashtags)) missing.push('chinese.hashtags');\n  if (!isArray(parsed.chinese?.image_overlay_text) || parsed.chinese.image_overlay_text.length < 3) missing.push('chinese.image_overlay_text');\n  for (const k of ['title','subtitle','body','hook','discussion_question']) if (!isNonEmptyString(parsed.english?.[k])) missing.push(`english.${k}`);\n  if (!isArray(parsed.english?.hashtags)) missing.push('english.hashtags');\n  if (!isArray(parsed.english?.image_overlay_text) || parsed.english.image_overlay_text.length < 3) missing.push('english.image_overlay_text');\n  if (!isNonEmptyString(parsed.image_plan?.hero_prompt)) missing.push('image_plan.hero_prompt');\n  if (!isArray(parsed.image_plan?.info_card_points) || parsed.image_plan.info_card_points.length < 3) missing.push('image_plan.info_card_points');\n  if (!isArray(parsed.image_plan?.aspect_ratios) || parsed.image_plan.aspect_ratios.length < 1) missing.push('image_plan.aspect_ratios');\n  for (const k of ['linkedin_zh','linkedin_en','youtube_community_zh','youtube_community_en']) if (!isNonEmptyString(parsed.platform_adaptations?.[k])) missing.push(`platform_adaptations.${k}`);\n  for (const k of ['x_thread_zh','x_thread_en']) if (!isArray(parsed.platform_adaptations?.[k]) || parsed.platform_adaptations[k].length < 1) missing.push(`platform_adaptations.${k}`);\n  for (const k of ['why_now','business_implication','next_question']) if (!isNonEmptyString(parsed.commercial_editorial_note?.[k])) missing.push(`commercial_editorial_note.${k}`);\n  if (!isArray(parsed.commercial_editorial_note?.who_should_care) || parsed.commercial_editorial_note.who_should_care.length < 1) missing.push('commercial_editorial_note.who_should_care');\n  if (!isNonEmptyString(parsed.quality_control?.copyright_note)) missing.push('quality_control.copyright_note');\n  if (!isArray(parsed.quality_control?.fact_check_required)) missing.push('quality_control.fact_check_required');\n  if (!isArray(parsed.quality_control?.risk_flags)) missing.push('quality_control.risk_flags');\n  if (typeof parsed.quality_control?.ready_for_human_review !== 'boolean') missing.push('quality_control.ready_for_human_review');\n}\nif (!parsed || missing.length || !isNonEmptyString(parsed?.source_url)) {\n  if (!missing.includes('source_url')) missing.push('source_url');\n  return { json: { ...original, generation_status: missing.includes('source_url') ? 'blocked_missing_source' : 'blocked_incomplete_draft', missing_fields: [...new Set(missing)], quality_control: { ...(parsed?.quality_control || {}), ready_for_human_review: false } } };\n}\nreturn { json: { ...original, ...parsed, generation_status: 'draft_generated', generated_at: new Date().toISOString() } };"
+      },
+      "id": "b91f404e-c8b0-49c5-9022-740c8489b467",
+      "name": "解析双语图文JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "id": "1367290c-b1fe-4f26-be91-3dbee5f819b7",
+      "name": "等待YouTube数据汇合",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        656,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const src = $json;\nconst input = {\n  content_id: src.content_id ?? null,\n  source_url: src.source_url ?? null,\n  title: src.title ?? null,\n  description: src.description ?? null,\n  author: src.author ?? null,\n  published_at: src.published_at ?? null,\n  language: src.language ?? null,\n  content_type: src.content_type ?? null,\n  view_count: src.view_count ?? 0,\n  like_count: src.like_count ?? 0,\n  comment_count: src.comment_count ?? 0,\n  viral_score: src.viral_score ?? 0,\n  ai_summary: src.ai_summary ?? null,\n  commercial_value: src.commercial_value ?? null,\n  business_analysis: src.business_analysis ?? null,\n  summary_zh: src.summary_zh ?? null,\n  summary_en: src.summary_en ?? null,\n  key_facts: src.key_facts ?? [],\n  why_it_may_work: src.why_it_may_work ?? null,\n  risk_flags: src.risk_flags ?? [],\n  uncertainty: src.uncertainty ?? [],\n  web_research_results: src.web_research_results ?? [],\n  official_source_candidates: src.official_source_candidates ?? [],\n  official_source_url: src.official_source_url ?? null,\n  official_source_title: src.official_source_title ?? null,\n  official_image_url: src.official_image_url ?? null,\n  asset_source: src.asset_source ?? null,\n  rights_status: src.rights_status ?? null\n};\nreturn { json: { ...src, request_body: { model: 'deepseek-chat', messages: [{ role: 'system', content: \"你是机器人产业内容生产 Agent，负责把已经通过热点筛选的机器人内容转化为可发布的中英文图文素材。\\n\\n你的首要原则是事实边界。你只能使用输入内容中明确存在的事实，或者把推断明确标记为推断。不得使用输入之外的训练知识补充公司历史、行业地位、此前项目、客户或技术背景；即使这些内容可能真实，只要输入没有提供，就必须写入 unknowns 或 fact_check_required，不得写进正文。绝对不能虚构公司客户、收入、融资、市场份额、部署数量、技术性能、测试结果、发布日期或“全球第一”等结论。播放量、点赞数和评论数只能证明内容传播表现，不能直接证明商业价值。\\n\\n你必须同时完成五件事：提炼已确认事实；区分推断和未知信息；写出适合中文读者的中文图文稿；写出不是逐句直译、但与中文事实边界一致的英文适配稿；生成主视觉和信息卡的图片计划，以及 LinkedIn、X、YouTube Community 等平台适配文本。\\n\\n内容必须回答：发生了什么、机器人具体做了什么、为什么现在值得关注、谁可能受影响或受益、商业价值在哪里、还缺什么证据。中文稿不是原文翻译，英文稿也不是中文逐句翻译。\\n\\n图片计划只能描述画面，不得虚构公司 Logo、品牌名称、数据、新闻标题或事实性文字。保留 source_url；如果来源、授权状态或事实不完整，必须写入 copyright_note、fact_check_required 或 risk_flags，并将 ready_for_human_review 设为 false。\\n\\n只返回一个严格 JSON 对象。不要返回 Markdown 代码块、解释文字、前缀或后缀。必须保留全部字段；没有证据时使用 null、空数组或“暂无证据”，不能删除字段、改名或扁平化 commercial_editorial_note。\" }, { role: 'user', content: '请将下面这条已通过热点筛选的机器人内容生成第一版可发布的中英文图文草稿。中文正文目标500–800字，英文正文目标180–260词；如证据不足，不要补写事实。只返回完整JSON。\\n\\n输入内容：' + JSON.stringify(input) + '\\n\\n完整JSON契约：' + JSON.stringify({\"content_id\":\"\",\"source_url\":\"\",\"editorial_angle\":\"\",\"fact_boundary\":{\"confirmed_facts\":[],\"inferences\":[],\"unknowns\":[]},\"chinese\":{\"title\":\"\",\"subtitle\":\"\",\"body\":\"\",\"hook\":\"\",\"discussion_question\":\"\",\"hashtags\":[],\"image_overlay_text\":[\"\",\"\",\"\"]},\"english\":{\"title\":\"\",\"subtitle\":\"\",\"body\":\"\",\"hook\":\"\",\"discussion_question\":\"\",\"hashtags\":[],\"image_overlay_text\":[\"\",\"\",\"\"]},\"image_plan\":{\"hero_prompt\":\"\",\"info_card_points\":[\"\",\"\",\"\"],\"aspect_ratios\":[\"1:1\",\"16:9\",\"4:5\"]},\"platform_adaptations\":{\"linkedin_zh\":\"\",\"linkedin_en\":\"\",\"x_thread_zh\":[],\"x_thread_en\":[],\"youtube_community_zh\":\"\",\"youtube_community_en\":\"\"},\"commercial_editorial_note\":{\"why_now\":\"\",\"who_should_care\":[],\"business_implication\":\"\",\"next_question\":\"\"},\"quality_control\":{\"copyright_note\":\"\",\"fact_check_required\":[],\"risk_flags\":[],\"ready_for_human_review\":false}}) }], temperature: 0.35, response_format: { type: 'json_object' } } } };"
+      },
+      "id": "268f7f98-e897-416e-8e5f-ced45f0279af",
+      "name": "准备双语图文请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1072,
+        304
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const draft = $json;\nconst qc = draft.quality_control || {};\nconst hasContent = draft.chinese && draft.english && draft.content_id && !draft.error;\nconst status = !hasContent\n  ? 'failed_missing_bilingual_content'\n  : (qc.ready_for_human_review === true ? 'ready_for_review' : 'blocked_fact_check');\nreturn { json: {\n  content_id: draft.content_id || null,\n  route: 'bilingual_image_text',\n  task_type: 'bilingual_social_draft',\n  status,\n  owner: 'content-agent',\n  input_payload: {\n    source_url: draft.source_url || null,\n    title: draft.title || null,\n    language: draft.language || null,\n    content_type: draft.content_type || null,\n    viral_score: draft.viral_score ?? null,\n    view_count: draft.view_count ?? 0,\n    like_count: draft.like_count ?? 0,\n    comment_count: draft.comment_count ?? 0\n  },\n  output_payload: draft,\n  due_at: null\n} };"
+      },
+      "id": "5ca76bdf-cebe-4391-8446-0c21f24cd019",
+      "name": "准备生产任务记录",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_production_tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            },
+            {
+              "name": "Accept-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify($json) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "d81a70b1-e6f6-49aa-bb9e-30b2f67561ec",
+      "name": "写入生产任务Supabase",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1632,
+        432
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "RWutEuXYEHFGbcFy",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const draft = $json;\nconst normalizeConfidence = (value) => {\n  if (value === null || value === undefined || value === '') return null;\n  let n = Number(value);\n  if (!Number.isFinite(n)) return null;\n  if (n > 1 && n <= 100) n = n / 100;\n  return Math.max(0, Math.min(1, Number(n.toFixed(3))));\n};\nconst sourceItems = $('解析商业分析JSON').all();\nconst draftContentId = draft.content_id || draft.video_id || null;\nconst base = sourceItems.find(item => item.json?.content_id === draftContentId)?.json || sourceItems[$itemIndex]?.json || {};\nconst qc = draft.quality_control || {};\nconst commercial = draft.commercial_editorial_note || {};\nconst facts = draft.fact_boundary || {};\nconst hasValue = (value) => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0) && !(typeof value === 'object' && value !== null && Object.keys(value).length === 0);\nconst firstValid = (...values) => values.find(hasValue);\nconst assetFields = {};\nfor (const key of ['content_visual_binding_key','image_title_overlay_language','image_title_overlay_status','asset_kind','asset_selection_reason','asset_subject','asset_match_status','official_image_url','official_source_url']) {\n  const value = firstValid(draft[key], base[key]);\n  if (hasValue(value)) assetFields[key] = value;\n}\nreturn { json: {\n  content_id: draft.content_id || base.content_id,\n  platform: base.platform || 'YouTube',\n  source: base.source || 'YouTube Data API',\n  source_url: draft.source_url || base.source_url || null,\n  video_id: base.video_id || null,\n  title: base.title || draft.chinese?.title || draft.english?.title || 'Untitled',\n  description: base.description || null,\n  author: base.author || null,\n  channel_id: base.channel_id || null,\n  published_at: base.published_at || null,\n  thumbnail: base.thumbnail || null,\n  language: base.language || null,\n  content_type: base.content_type || 'video',\n  robotics_topic: base.robotics_topic || 'robotics',\n  view_count: base.view_count ?? 0,\n  like_count: base.like_count ?? 0,\n  comment_count: base.comment_count ?? 0,\n  favorite_count: base.favorite_count ?? 0,\n  engagement: base.engagement || {},\n  viral_score: base.viral_score ?? null,\n  score_source: base.score_source || 'DeepSeek',\n  ai_summary: draft.editorial_angle || base.ai_summary || null,\n  status: draft.generation_status || 'draft_generated',\n  is_robotics: base.business_analysis?.is_robotics ?? null,\n  category: base.business_analysis?.category ?? base.category ?? null,\n  summary_zh: draft.chinese?.body || draft.summary_zh || draft.business_analysis?.summary_zh || null,\n  summary_en: draft.english?.body || draft.summary_en || draft.business_analysis?.summary_en || null,\n  chinese: draft.chinese || {},\n  english: draft.english || {},\n  image_plan: draft.image_plan || {},\n  platform_adaptations: draft.platform_adaptations || {},\n  fact_boundary: draft.fact_boundary || {},\n  quality_control: draft.quality_control || {},\n  key_facts: facts.confirmed_facts || [],\n  why_it_may_work: commercial.why_now || base.business_analysis?.why_it_may_work || base.why_it_may_work || null,\n  hook: draft.chinese?.hook || draft.english?.hook || null,\n  target_audience: commercial.who_should_care || [],\n  analyzed_content_type: 'bilingual_image_text',\n  analyzed_language: 'zh-en',\n  recommended_route: 'bilingual_image_text',\n  priority: base.business_analysis?.priority ?? base.priority ?? null,\n  keep: base.business_analysis?.keep ?? base.keep ?? null,\n  confidence: normalizeConfidence(base.business_analysis?.confidence ?? base.analysis_confidence),\n  analysis_confidence: normalizeConfidence(base.business_analysis?.confidence ?? base.analysis_confidence),\n  commercial_value: base.business_analysis?.commercial_value ?? base.commercial_value ?? {},\n  risk_flags: qc.risk_flags || base.risk_flags || [],\n  uncertainty: facts.unknowns || base.uncertainty || [],\n  analysis_status: 'bilingual_draft_generated',\n  final_route: 'bilingual_image_text',\n  next_module: qc.ready_for_human_review === true ? 'human_review' : 'fact_check',\n  official_source_url: assetFields.official_source_url ?? null,\n  official_source_title: draft.official_source_title || base.official_source_title || null,\n  official_image_url: assetFields.official_image_url ?? null,\n  asset_source: draft.asset_source || base.asset_source || null,\n  rights_status: draft.rights_status || base.rights_status || 'official_source_not_confirmed',\n  image_asset_status: draft.official_image_url ? 'candidate_found_review_required' : 'not_found',\n  approval_status: 'pending_approval',\n  x_publish_status: 'pending_approval',\n  ...assetFields,\n  raw_search_item: base.raw_search_item || {},\n  raw_statistics_item: base.raw_statistics_item || {},\n  raw_deepseek_item: { score: base.raw_deepseek_item || {}, business_analysis: base.business_analysis || {}, bilingual_draft: draft },\n  collected_at: base.collected_at || new Date().toISOString(),\n  analyzed_at: new Date().toISOString(),\n  route_decision_at: new Date().toISOString()\n} };"
+      },
+      "id": "302d4ae3-b7d2-4580-995b-4950093d0f8e",
+      "name": "准备内容最终回写",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1408,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?on_conflict=content_id",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            },
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            },
+            {
+              "name": "Accept-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ (() => {\n  const row = $json || {};\n  const allowed = [\"content_id\", \"platform\", \"source\", \"source_url\", \"video_id\", \"title\", \"description\", \"author\", \"channel_id\", \"published_at\", \"thumbnail\", \"language\", \"content_type\", \"robotics_topic\", \"view_count\", \"like_count\", \"comment_count\", \"favorite_count\", \"engagement\", \"viral_score\", \"score_source\", \"ai_summary\", \"status\", \"is_robotics\", \"robotics_relevance\", \"category\", \"summary_zh\", \"summary_en\", \"key_facts\", \"why_it_may_work\", \"hook\", \"target_audience\", \"analyzed_content_type\", \"analyzed_language\", \"recommended_route\", \"priority\", \"keep\", \"analysis_confidence\", \"risk_flags\", \"uncertainty\", \"analysis_status\", \"final_route\", \"next_module\", \"raw_search_item\", \"raw_statistics_item\", \"raw_deepseek_item\", \"collected_at\", \"analyzed_at\", \"route_decision_at\"];\n  const out = {};\n  for (const key of allowed) {\n    if (row[key] !== undefined) out[key] = row[key];\n  }\n  out.content_id = row.content_id || `youtube_${row.video_id || Date.now()}`;\n  out.platform = row.platform || 'YouTube';\n  out.source = row.source || 'YouTube Data API';\n  out.title = row.title || 'Untitled';\n  out.status = row.status || 'draft_generated';\n  out.view_count = Number(row.view_count || 0);\n  out.like_count = Number(row.like_count || 0);\n  out.comment_count = Number(row.comment_count || 0);\n  out.favorite_count = Number(row.favorite_count || 0);\n  out.engagement = row.engagement || {};\n  out.key_facts = row.key_facts || [];\n  out.target_audience = row.target_audience || [];\n  out.risk_flags = row.risk_flags || [];\n  out.uncertainty = row.uncertainty || [];\n  out.raw_search_item = row.raw_search_item || {};\n  out.raw_statistics_item = row.raw_statistics_item || {};\n  out.raw_deepseek_item = { ...(row.raw_deepseek_item || {}), official_research: { official_source_url: row.official_source_url || null, official_source_title: row.official_source_title || null, official_image_url: row.official_image_url || null, asset_source: row.asset_source || null, rights_status: row.rights_status || null, approval_status: row.approval_status || 'pending_approval', x_publish_status: row.x_publish_status || 'pending_approval' } };\n  return JSON.stringify(out);\n})() }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "2a5881fe-222d-4d47-89a0-5ce4d1b5522b",
+      "name": "更新Supabase完整内容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1616,
+        288
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "RWutEuXYEHFGbcFy",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = $json;\nconst input = {\n  content_id: s.content_id ?? null,\n  source_url: s.source_url ?? null,\n  title: s.title ?? null,\n  description: s.description ?? null,\n  author: s.author ?? null,\n  published_at: s.published_at ?? null,\n  language: s.language ?? null,\n  content_type: s.content_type ?? null,\n  view_count: s.view_count ?? 0,\n  like_count: s.like_count ?? 0,\n  comment_count: s.comment_count ?? 0,\n  viral_score: s.viral_score ?? 0,\n  ai_summary: s.ai_summary ?? null,\n  source_evidence: s.raw_search_item ?? {},\n  statistics_evidence: s.raw_statistics_item ?? {}\n};\nreturn { json: { ...s, commercial_request_body: { model: 'deepseek-chat', messages: [\n  { role: 'system', content: `你是机器人产业情报与商业分析 Agent。你只能使用输入中明确提供的事实；禁止补充输入之外的公司背景、客户、收入、融资、市场份额、部署数量、技术性能或行业排名。播放量、点赞数和评论数只能说明传播表现，不能直接证明商业价值。请分别评估市场变化、客户需求、产品机会、技术能力、竞争信号和内容传播价值，并为每个判断提供 evidence 与 implication。若证据不足，使用 null、空数组或“暂无证据”。只返回一个严格 JSON 对象，不要 Markdown、解释文字或前后缀。` },\n  { role: 'user', content: `请分析以下已通过机器人热点初筛的内容，并输出完整商业价值 JSON：\\n\\n${JSON.stringify(input)}\\n\\nJSON契约：${JSON.stringify({\n    content_id:'', is_robotics:false, category:'', summary_zh:'', summary_en:'', why_it_may_work:'', hook:'', priority:'C', keep:false,\n    commercial_value:{overall_score:null, market_signal:{score:null,evidence:[],implication:''}, customer_signal:{score:null,evidence:[],implication:''}, product_signal:{score:null,evidence:[],implication:''}, technology_signal:{score:null,evidence:[],implication:''}, competition_signal:{score:null,evidence:[],implication:''}, content_signal:{score:null,evidence:[],implication:''}, potential_payers:[], value_chain_impact:[], questions_to_validate:[]},\n    risk_flags:[], uncertainty:[], confidence:null\n  })}` }\n], temperature: 0.2, response_format: { type: 'json_object' } } } };"
+      },
+      "id": "466243b0-e41a-46ee-a563-fe8c3c4b9ef2",
+      "name": "准备商业分析请求",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        912,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <DEEPSEEK_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.commercial_request_body }}",
+        "options": {}
+      },
+      "id": "f0cc3f15-76a9-4d76-98c2-78a5789d78b7",
+      "name": "DeepSeek商业分析",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1120,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = $json.choices?.[0]?.message?.content ?? $json.content ?? $json.text ?? '';\nfunction parse(value) {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || !value.trim()) return null;\n  const cleaned=value.replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n  try { return JSON.parse(cleaned); } catch (_) {}\n  const m=cleaned.match(/\\{[\\s\\S]*\\}/); if (!m) return null;\n  try { return JSON.parse(m[0]); } catch (_) { return null; }\n}\nconst parsed=parse(raw);\nconst requestItems = $('准备商业分析请求').all();\nconst source = requestItems[$itemIndex]?.json || $json;\nconst missing=[];\nfor (const k of ['content_id','is_robotics','category','commercial_value','priority','keep','risk_flags','uncertainty','confidence']) if (!parsed || !Object.prototype.hasOwnProperty.call(parsed,k)) missing.push(k);\nif (parsed && (!parsed.commercial_value || typeof parsed.commercial_value !== 'object')) missing.push('commercial_value');\nreturn { json: { ...source, business_analysis: parsed || {}, commercial_value: parsed?.commercial_value || {}, commercial_analysis_status: parsed && !missing.length ? 'generated' : 'blocked_incomplete', commercial_analysis_missing: [...new Set(missing)], commercial_analysis_raw: raw } };"
+      },
+      "id": "21198a25-084c-46d6-8261-76679d4af2ce",
+      "name": "解析商业分析JSON",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1328,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all().map(i => i.json || {});\nreturn items.sort((a,b) => Number(b.viral_score || 0) - Number(a.viral_score || 0)).map((json,index) => ({json:{...json, screening_rank:index+1, screening_status:'selected_for_analysis', recommended_route:'commercial_analysis'}}));"
+      },
+      "id": "screening-node-001",
+      "name": "筛选热点并排序",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const row = $json || {};\nconst originalItems = $('准备内容最终回写').all();\nconst original = originalItems.find(item => item.json?.content_id === row.content_id)?.json || {};\nconst merged = { ...original, ...row };\nfor (const key of ['official_source_url','official_source_title','official_image_url','asset_source','rights_status','image_asset_status','approval_status','x_publish_status']) {\n  if (original[key] !== undefined && (row[key] === undefined || row[key] === null || row[key] === '')) merged[key] = original[key];\n}\nconst required = ['content_id','commercial_value','category','confidence','summary_zh','summary_en','chinese','english'];\nconst missing = required.filter(k => merged[k] === null || merged[k] === undefined || merged[k] === '' || (typeof merged[k] === 'object' && merged[k] !== null && !Object.keys(merged[k]).length));\nreturn { json: {\n  ...merged,\n  write_status: missing.length ? 'incomplete_analysis' : 'upserted_and_validated',\n  write_missing_fields: missing\n} };"
+      },
+      "id": "assert-update-001",
+      "name": "断言Supabase更新命中",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://news.google.com/rss/search?q=' + encodeURIComponent(($json.title || '') + ' ' + ($json.author || '') + ' robotics official news') + '&hl=en-US&gl=US&ceid=US:en' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "检索官网与新闻来源-id",
+      "name": "检索官网与新闻来源",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1008,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const raw = typeof $json === 'string' ? $json : ($json.data || $json.body || $json.text || '');\nconst original = $('筛选热点并排序').item.json;\nconst text = String(raw || '');\nconst items = [...text.matchAll(/<item>([\\s\\S]*?)<\\/item>/gi)].map(m => m[1]);\nconst decode = (s) => String(s || '').replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").trim();\nconst results = items.slice(0, 12).map(block => {\n  const title = decode(block.match(/<title>([\\s\\S]*?)<\\/title>/i)?.[1]);\n  const link = decode(block.match(/<link>([\\s\\S]*?)<\\/link>/i)?.[1]);\n  const sourceMatch = block.match(/<source[^>]*url=[\"']([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/source>/i);\n  return { title, url: link, source_name: decode(sourceMatch?.[2]), source_url: sourceMatch?.[1] || null };\n}).filter(x => x.title && x.url);\nconst companyHint = `${original.title || ''} ${original.author || ''}`.toLowerCase();\nconst likelyOfficial = results.find(x => {\n  const source = `${x.source_name || ''} ${x.source_url || ''}`.toLowerCase();\n  return ['official','deepmind','google','figure','agility','boston dynamics','tesla','nvidia','openai','robotics'].some(k => source.includes(k) && companyHint.includes(k.split(' ')[0]));\n}) || null;\nreturn { json: {\n  ...original,\n  web_research_results: results,\n  official_source_candidates: results,\n  official_source_url: likelyOfficial?.source_url || null,\n  official_source_title: likelyOfficial?.title || null,\n  official_source_name: likelyOfficial?.source_name || null,\n  research_status: results.length ? 'candidates_found' : 'no_candidates_found',\n  rights_status: likelyOfficial ? 'official_source_candidate_found_review_required' : 'official_source_not_confirmed'\n} };"
+      },
+      "id": "解析官网与新闻候选-id",
+      "name": "解析官网与新闻候选",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1232,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "official-source-present",
+              "leftValue": "={{$json.official_source_url}}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "official-source-if-id",
+      "name": "是否存在官方来源",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1456,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.official_source_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "id": "获取官方来源页面-id",
+      "name": "获取官方来源页面",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1680,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const page = String($json.data || $json.body || $json.text || '');\nconst source = $('解析官网与新闻候选').item.json;\nconst decode = (v) => String(v || '')\n  .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')\n  .replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\")\n  .replace(/&#x2F;/gi, '/').trim();\nconst absolute = (u) => {\n  try { return new URL(decode(u), source.official_source_url || 'https://deepmind.google').toString(); }\n  catch { return decode(u); }\n};\nconst findMeta = (property) => {\n  const p = property.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n  const patterns = [\n    new RegExp(`<meta[^>]+(?:property|name)=[\"']${p}[\"'][^>]*content=[\"']([^\"']+)[\"']`, 'i'),\n    new RegExp(`<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*(?:property|name)=[\"']${p}[\"']`, 'i')\n  ];\n  for (const re of patterns) { const m = page.match(re); if (m?.[1]) return absolute(m[1]); }\n  return null;\n};\nconst candidates = [];\nconst push = (url, kind, context='') => {\n  const u = absolute(url);\n  if (!u || !/^https?:\\/\\//i.test(u)) return;\n  if (!candidates.some(x => x.url === u)) candidates.push({ url: u, kind, context: String(context || '').toLowerCase() });\n};\npush(findMeta('og:image'), 'og:image');\npush(findMeta('twitter:image'), 'twitter:image');\nfor (const m of page.matchAll(/<(?:img|source)[^>]+(?:src|data-src|srcset|data-srcset)=[\"']([^\"' ,]+)[\"'][^>]*>/gi)) {\n  const whole = m[0].toLowerCase();\n  push(m[1], 'page-image', whole);\n}\nconst identity = `${source.title || ''} ${source.author || ''} ${source.official_source_url || ''} ${source.official_source_name || ''}`.toLowerCase();\nconst isGeminiRobotics2 = identity.includes('gemini robotics 2') || (identity.includes('gemini') && identity.includes('robotics'));\n// This is a stable, high-resolution image embedded in the official DeepMind article,\n// and is preferred over the article-level og:image when the subject is Gemini Robotics 2.\nconst deepmindSubjectAsset = 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663137102957/eAfqiQhmloRwWhao.png';\nlet selected = null;\nlet reason = '';\nif (isGeminiRobotics2 && /deepmind\\.google|google/i.test(identity)) {\n  selected = { url: deepmindSubjectAsset, kind: 'official_article_subject_asset_with_english_overlay', context: 'Gemini Robotics 2 official robot image with approved English title overlay' };\n  reason = 'subject-specific official DeepMind article asset overrides generic og:image';\n} else {\n  const subjectTokens = identity.split(/[^a-z0-9]+/i).filter(x => x.length >= 4);\n  const ranked = candidates.map(c => {\n    let score = c.kind === 'og:image' ? 1 : c.kind === 'twitter:image' ? 2 : 4;\n    if (/(robot|robotics|apollo|gemini|deepmind|humanoid|manipulat|gripper)/i.test(c.url + ' ' + c.context)) score += 8;\n    for (const t of subjectTokens) if ((c.url + ' ' + c.context).includes(t)) score += 2;\n    return { ...c, score };\n  }).sort((a,b) => b.score-a.score);\n  selected = ranked[0] || null;\n  reason = selected ? `ranked official page asset; score=${selected.score}` : 'no official image candidate';\n}\nconst image = selected?.url || null;\nconst bindingKey = [source.content_id || source.video_id || source.source_url || '', image || '', source.official_source_url || ''].join('|');\nreturn { json: {\n  ...source,\n  official_image_url: image,\n  image_source_url: source.official_source_url || null,\n  asset_source: image ? (source.official_source_name || source.official_source_url || 'official source page') : null,\n  asset_kind: selected?.kind || null,\n  image_title_overlay_language: isGeminiRobotics2 ? 'en' : null,\n  image_title_overlay_status: isGeminiRobotics2 ? 'restored_from_user_confirmed_yesterday_asset' : null,\n  asset_selection_reason: reason,\n  asset_subject: isGeminiRobotics2 ? 'Gemini Robotics 2' : (source.title || null),\n  asset_match_status: image && (isGeminiRobotics2 || /robot|robotics|humanoid|apollo|gemini/i.test(`${selected?.url || ''} ${selected?.context || ''}`)) ? 'subject_matched_official' : 'needs_manual_visual_review',\n  content_visual_binding_key: bindingKey,\n  rights_status: image ? 'official_image_found_review_required' : 'official_page_without_image',\n  asset_status: image ? 'official_image_candidate_found' : 'official_image_not_found'\n} };"
+      },
+      "id": "解析官方图片资产-id",
+      "name": "解析官方图片资产",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1904,
+        288
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const source = $json;\nreturn { json: {\n  ...source,\n  official_image_url: null,\n  image_source_url: null,\n  asset_source: null,\n  asset_status: 'official_source_not_confirmed',\n  rights_status: 'official_source_not_confirmed'\n} };"
+      },
+      "id": "标记无官方来源-id",
+      "name": "标记无官方来源",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1680,
+        464
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "x-approval",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "x-approval-if-id",
+      "name": "X发布审批闸门",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1968,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const s = ($json && $json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst confirmed = typeof s.x_text_en === 'string' && s.x_text_en.trim() ? s.x_text_en.trim() : null;\nconst xParts = s.platform_adaptations?.x_thread_en;\nconst candidate = Array.isArray(xParts) ? xParts[0] : null;\nconst body = confirmed || candidate || s.english?.hook || s.summary_en || s.english?.body || '';\nconst tags = confirmed ? '' : (Array.isArray(s.english?.hashtags) ? s.english.hashtags.slice(0, 3).map(x => `#${String(x).replace(/^#/, '')}`).join(' ') : '');\nconst text = confirmed || [body.trim(), tags, s.source_url ? `Source: ${s.source_url}` : ''].filter(Boolean).join('\\n\\n');\nconst errors = [];\nif (!s.official_image_url) errors.push('official_image_url_missing');\nif (s.image_title_overlay_language !== 'en') errors.push('english_image_title_overlay_missing');\nif (!s.content_visual_binding_key) errors.push('content_visual_binding_missing');\nif (!s.official_source_url) errors.push('official_source_url_missing');\nif (!text.trim()) errors.push('x_text_missing');\nif (/[\\u4e00-\\u9fff]/.test(text)) errors.push('x_text_not_english');\nif (text.length > 280 && !s.allow_long_post) errors.push(`x_text_over_280:${text.length}`);\nreturn { json: { ...s, x_text_en: text, x_validation_errors: errors, x_publish_status: errors.length ? 'blocked_validation' : 'ready_to_publish' } };"
+      },
+      "id": "准备X发布内容-id",
+      "name": "准备X发布内容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2208,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.official_image_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "下载官方图片二进制-id",
+      "name": "下载官方图片二进制",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2448,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.com/2/media/upload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twitterOAuth1Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "media",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "media_category",
+              "value": "tweet_image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "X上传官方图片-id",
+      "name": "X上传官方图片",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2688,
+        176
+      ],
+      "credentials": {
+        "twitterOAuth1Api": {
+          "id": "oSQyARPK9p9y9svw",
+          "name": "X OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.com/2/tweets",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twitterOAuth1Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $('准备X发布内容').item.json.x_text_en, media: { media_ids: [$json.data.id] } }) }}",
+        "options": {}
+      },
+      "id": "X发布图片帖子-id",
+      "name": "X发布图片帖子",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2928,
+        176
+      ],
+      "credentials": {
+        "twitterOAuth1Api": {
+          "id": "oSQyARPK9p9y9svw",
+          "name": "X OAuth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?select=*&limit=100",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Profile",
+              "value": "public"
+            },
+            {
+              "name": "Accept-Profile",
+              "value": "public"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "approval-scan-query-id",
+      "name": "扫描Supabase已批准待发布内容",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -180,
+        720
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "supabaseApi": {
+          "id": "RWutEuXYEHFGbcFy",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const rows = $input.all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(Boolean);\nconst out=[];\nfor (const row of rows) {\n  const research = row.raw_deepseek_item?.official_research || row.official_research || {};\n  const approval_status = row.status || research.status || 'pending_approval';\n  const x_publish_status = row.x_publish_status || research.x_publish_status || 'pending_approval';\n  if (approval_status !== 'approved') continue;\n  if (['published','posted','success'].includes(String(x_publish_status))) continue;\n  const x_text_en = row.x_text_en || research.x_text_en || row.platform_adaptations?.x_text_en || row.english?.x_text_en || row.summary_en || row.english || '';\n  const official_image_url = row.official_image_url || research.official_image_url || null;\n  const official_source_url = row.official_source_url || research.official_source_url || null;\n  const content_visual_binding_key = row.content_visual_binding_key || research.content_visual_binding_key || `${row.content_id || ''}|${official_image_url || ''}`;\n  out.push({json:{...row, status: approval_status, x_publish_status, x_text_en, official_image_url, official_source_url, content_visual_binding_key, image_title_overlay_language: row.image_title_overlay_language || research.image_title_overlay_language || 'en', allow_long_post:true, approval_scan_source:'main_hourly_approval_scan'}});\n}\nreturn out;"
+      },
+      "id": "approval-scan-filter-id",
+      "name": "筛选已批准待发布内容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        720
+      ]
     }
   ],
   "connections": {
@@ -178,6 +809,11 @@
         [
           {
             "node": "搜索YouTube",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "扫描Supabase已批准待发布内容",
             "type": "main",
             "index": 0
           }
@@ -196,6 +832,11 @@
             "node": "YouTube视频统计",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "等待YouTube数据汇合",
+            "type": "main",
+            "index": 2
           }
         ]
       ]
@@ -204,7 +845,7 @@
       "main": [
         [
           {
-            "node": "Code in JavaScript",
+            "node": "等待YouTube数据汇合",
             "type": "main",
             "index": 0
           }
@@ -218,6 +859,11 @@
             "node": "存入Supabase",
             "type": "main",
             "index": 0
+          },
+          {
+            "node": "筛选热点并排序",
+            "type": "main",
+            "index": 0
           }
         ]
       ]
@@ -226,7 +872,284 @@
       "main": [
         [
           {
+            "node": "等待YouTube数据汇合",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "DeepSeek双语图文生产": {
+      "main": [
+        [
+          {
+            "node": "解析双语图文JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "等待YouTube数据汇合": {
+      "main": [
+        [
+          {
             "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备双语图文请求": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek双语图文生产",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析双语图文JSON": {
+      "main": [
+        [
+          {
+            "node": "准备内容最终回写",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备生产任务记录": {
+      "main": [
+        [
+          {
+            "node": "写入生产任务Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备内容最终回写": {
+      "main": [
+        [
+          {
+            "node": "更新Supabase完整内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "更新Supabase完整内容": {
+      "main": [
+        [
+          {
+            "node": "断言Supabase更新命中",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "准备商业分析请求": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek商业分析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek商业分析": {
+      "main": [
+        [
+          {
+            "node": "解析商业分析JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析商业分析JSON": {
+      "main": [
+        [
+          {
+            "node": "准备双语图文请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "筛选热点并排序": {
+      "main": [
+        [
+          {
+            "node": "检索官网与新闻来源",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "断言Supabase更新命中": {
+      "main": [
+        [
+          {
+            "node": "准备生产任务记录",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "X发布审批闸门",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检索官网与新闻来源": {
+      "main": [
+        [
+          {
+            "node": "解析官网与新闻候选",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析官网与新闻候选": {
+      "main": [
+        [
+          {
+            "node": "是否存在官方来源",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否存在官方来源": {
+      "main": [
+        [
+          {
+            "node": "获取官方来源页面",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "标记无官方来源",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取官方来源页面": {
+      "main": [
+        [
+          {
+            "node": "解析官方图片资产",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析官方图片资产": {
+      "main": [
+        [
+          {
+            "node": "准备商业分析请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "标记无官方来源": {
+      "main": [
+        [
+          {
+            "node": "准备商业分析请求",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X发布审批闸门": {
+      "main": [
+        [
+          {
+            "node": "准备X发布内容",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "准备X发布内容": {
+      "main": [
+        [
+          {
+            "node": "下载官方图片二进制",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "下载官方图片二进制": {
+      "main": [
+        [
+          {
+            "node": "X上传官方图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X上传官方图片": {
+      "main": [
+        [
+          {
+            "node": "X发布图片帖子",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "扫描Supabase已批准待发布内容": {
+      "main": [
+        [
+          {
+            "node": "筛选已批准待发布内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "筛选已批准待发布内容": {
+      "main": [
+        [
+          {
+            "node": "X发布审批闸门",
             "type": "main",
             "index": 0
           }
@@ -252,8 +1175,1182 @@
   "meta": null,
   "nodeGroups": [],
   "pinData": {},
-  "versionCounter": 136,
+  "versionCounter": 263,
   "triggerCount": 1,
   "sourceWorkflowId": null,
-  "activeVersion": null
+  "activeVersion": {
+    "updatedAt": "2026-08-16T03:20:06.643Z",
+    "createdAt": "2026-08-16T03:20:06.643Z",
+    "versionId": "ffdaee6c-57a0-496e-9071-fda48a96abb9",
+    "workflowId": "dXLL6RaVYyJUbAwO",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "id": "e70669a3-faec-4470-a837-1ec90bfb3c80",
+        "name": "每小时触发",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1,
+        "position": [
+          0,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/youtube/v3/search",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpQueryAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "part",
+                "value": "snippet"
+              },
+              {
+                "name": "type",
+                "value": "video"
+              },
+              {
+                "name": "q",
+                "value": "robot OR robotics"
+              },
+              {
+                "name": "maxResults",
+                "value": "10"
+              },
+              {
+                "name": "order",
+                "value": "relevance"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "5370d308-d63e-4812-848d-55bd0f50b7bc",
+        "name": "搜索YouTube",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.1,
+        "position": [
+          336,
+          0
+        ],
+        "credentials": {
+          "httpQueryAuth": {
+            "id": "EsaFRnRGRPTHifLw",
+            "name": "Query Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?on_conflict=content_id",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              },
+              {
+                "name": "Content-Profile",
+                "value": "public"
+              },
+              {
+                "name": "Accept-Profile",
+                "value": "public"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "application/json",
+          "body": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "3be45990-392c-4b2f-b983-ba9b872a15da",
+        "name": "存入Supabase",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1136,
+          0
+        ],
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "credentials": {
+          "supabaseApi": {
+            "id": "RWutEuXYEHFGbcFy",
+            "name": "Supabase account"
+          }
+        },
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer <DEEPSEEK_API_KEY>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({\n  model: \"deepseek-chat\",\n  messages: [\n    {\n      role: \"system\",\n      content: \"你是一个机器人内容热点评分专家。对输入的视频列表逐条评分。只返回严格JSON数组，不要Markdown代码块。每个元素必须是 {\\\\\\\"video_id\\\\\\\":\\\\\\\"字符串\\\\\\\",\\\\\\\"score\\\\\\\":0到100的数字,\\\\\\\"reason\\\\\\\":\\\\\\\"简短中文理由\\\\\\\"}。评分综合考虑机器人相关性、时效性、传播潜力、新闻重要性、来源可信度和视觉传播价值。\"\n    },\n    {\n      role: \"user\",\n      content: \"请评分以下YouTube视频：\" + JSON.stringify($('搜索YouTube').first().json.items.map(item => ({\n        video_id: item.id?.videoId || \"\",\n        title: item.snippet?.title || \"\",\n        description: item.snippet?.description || \"\"\n      })))\n    }\n  ],\n  temperature: 0.3\n}) }}",
+          "options": {}
+        },
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          656,
+          0
+        ],
+        "id": "80e6c9e3-163f-4842-ae71-d46107a04248",
+        "name": "HTTP Request",
+        "onError": "continueRegularOutput"
+      },
+      {
+        "parameters": {
+          "jsCode": "// 合并三类来源：YouTube Search、YouTube videos.list statistics、DeepSeek评分。\n// 输出：每个视频一条完整标准化记录，适合后续 Supabase 入库。\nconst searchResponse = $('搜索YouTube').first()?.json || {};\nconst statsResponse = $('YouTube视频统计').first()?.json || {};\nconst deepseekResponse = $('HTTP Request').first()?.json || {};\n\nconst searchItems = Array.isArray(searchResponse.items) ? searchResponse.items : [];\nconst statsItems = Array.isArray(statsResponse.items) ? statsResponse.items : [];\n\nconst statsByVideoId = new Map(\n  statsItems.map(item => [item.id, item])\n);\n\nfunction parseDeepSeekScores(response) {\n  const raw = response.choices?.[0]?.message?.content ?? response.content ?? response.text ?? '';\n  if (Array.isArray(raw)) return raw;\n  if (raw && typeof raw === 'object') return [raw];\n  if (typeof raw !== 'string' || !raw.trim()) return [];\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n\n  try {\n    const parsed = JSON.parse(cleaned);\n    return Array.isArray(parsed) ? parsed : [parsed];\n  } catch (error) {\n    const arrayMatch = cleaned.match(/\\[[\\s\\S]*\\]/);\n    if (arrayMatch) {\n      try {\n        const parsed = JSON.parse(arrayMatch[0]);\n        return Array.isArray(parsed) ? parsed : [parsed];\n      } catch (_) {}\n    }\n    return [];\n  }\n}\n\nconst scoreItems = parseDeepSeekScores(deepseekResponse);\nconst scoreByVideoId = new Map(\n  scoreItems\n    .filter(item => item && item.video_id)\n    .map(item => [item.video_id, item])\n);\n\nreturn searchItems.map(item => {\n  const videoId = item.id?.videoId || item.id || '';\n  const snippet = item.snippet || {};\n  const stats = statsByVideoId.get(videoId) || {};\n  const statistics = stats.statistics || {};\n  const score = scoreByVideoId.get(videoId) || {};\n\n  return {\n    json: {\n      content_id: `youtube_${videoId}`,\n      platform: 'YouTube',\n      source: 'YouTube Data API',\n      source_url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : '',\n      video_id: videoId,\n      title: snippet.title || stats.snippet?.title || '无标题',\n      description: snippet.description || stats.snippet?.description || '',\n      author: snippet.channelTitle || stats.snippet?.channelTitle || '未知作者',\n      channel_id: snippet.channelId || stats.snippet?.channelId || '',\n      published_at: snippet.publishedAt || stats.snippet?.publishedAt || null,\n      thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url || stats.snippet?.thumbnails?.high?.url || '',\n      language: 'en',\n      content_type: 'video',\n      robotics_topic: 'robotics',\n      view_count: Number(statistics.viewCount || 0),\n      like_count: Number(statistics.likeCount || 0),\n      comment_count: Number(statistics.commentCount || 0),\n      favorite_count: Number(statistics.favoriteCount || 0),\n      engagement: {\n        views: Number(statistics.viewCount || 0),\n        likes: Number(statistics.likeCount || 0),\n        comments: Number(statistics.commentCount || 0),\n        favorites: Number(statistics.favoriteCount || 0),\n      },\n      viral_score: score.score ?? null,\n      ai_summary: score.reason || '暂无评分理由',\n      score_source: 'DeepSeek',\n      status: 'discovered',\n      raw_search_item: item,\n      raw_statistics_item: stats,\n      raw_deepseek_item: score,\n      collected_at: new Date().toISOString(),\n    }\n  };\n});"
+        },
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          880,
+          0
+        ],
+        "id": "b5ad53dc-759f-4cc5-8423-71d7636e037e",
+        "name": "Code in JavaScript"
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/youtube/v3/videos",
+          "authentication": "genericCredentialType",
+          "genericAuthType": "httpQueryAuth",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "part",
+                "value": "snippet,statistics"
+              },
+              {
+                "name": "id",
+                "value": "={{ $('搜索YouTube').first().json.items.map(item => item.id.videoId).filter(Boolean).join(',') }}"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "17275a28-8d53-40e1-873d-7347a846621a",
+        "name": "YouTube视频统计",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          560,
+          224
+        ],
+        "credentials": {
+          "httpQueryAuth": {
+            "id": "EsaFRnRGRPTHifLw",
+            "name": "Query Auth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer <DEEPSEEK_API_KEY>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.request_body }}",
+          "options": {}
+        },
+        "id": "7ae08f8b-153e-444d-9ef0-501bb4b75304",
+        "name": "DeepSeek双语图文生产",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          992,
+          272
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const raw = $json.choices?.[0]?.message?.content ?? $json.content ?? $json.text ?? '';\nfunction parse(raw) {\n  if (raw && typeof raw === 'object') return raw;\n  if (typeof raw !== 'string' || !raw.trim()) return null;\n  const cleaned = raw.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  try { return JSON.parse(cleaned); } catch (_) {}\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (!m) return null;\n  try { return JSON.parse(m[0]); } catch (_) { return null; }\n}\nfunction isNonEmptyString(x) { return typeof x === 'string' && x.trim().length > 0; }\nfunction isArray(x) { return Array.isArray(x); }\nconst parsed = parse(raw);\nconst sourceItems = $('解析商业分析JSON').all();\nconst original = sourceItems[$itemIndex]?.json || $json;\nconst missing = [];\nconst requiredTop = ['content_id','source_url','editorial_angle','fact_boundary','chinese','english','image_plan','platform_adaptations','commercial_editorial_note','quality_control'];\nfor (const k of requiredTop) if (!parsed || !Object.prototype.hasOwnProperty.call(parsed,k)) missing.push(k);\nif (parsed) {\n  for (const k of ['confirmed_facts','inferences','unknowns']) if (!isArray(parsed.fact_boundary?.[k])) missing.push(`fact_boundary.${k}`);\n  for (const k of ['title','subtitle','body','hook','discussion_question']) if (!isNonEmptyString(parsed.chinese?.[k])) missing.push(`chinese.${k}`);\n  if (!isArray(parsed.chinese?.hashtags)) missing.push('chinese.hashtags');\n  if (!isArray(parsed.chinese?.image_overlay_text) || parsed.chinese.image_overlay_text.length < 3) missing.push('chinese.image_overlay_text');\n  for (const k of ['title','subtitle','body','hook','discussion_question']) if (!isNonEmptyString(parsed.english?.[k])) missing.push(`english.${k}`);\n  if (!isArray(parsed.english?.hashtags)) missing.push('english.hashtags');\n  if (!isArray(parsed.english?.image_overlay_text) || parsed.english.image_overlay_text.length < 3) missing.push('english.image_overlay_text');\n  if (!isNonEmptyString(parsed.image_plan?.hero_prompt)) missing.push('image_plan.hero_prompt');\n  if (!isArray(parsed.image_plan?.info_card_points) || parsed.image_plan.info_card_points.length < 3) missing.push('image_plan.info_card_points');\n  if (!isArray(parsed.image_plan?.aspect_ratios) || parsed.image_plan.aspect_ratios.length < 1) missing.push('image_plan.aspect_ratios');\n  for (const k of ['linkedin_zh','linkedin_en','youtube_community_zh','youtube_community_en']) if (!isNonEmptyString(parsed.platform_adaptations?.[k])) missing.push(`platform_adaptations.${k}`);\n  for (const k of ['x_thread_zh','x_thread_en']) if (!isArray(parsed.platform_adaptations?.[k]) || parsed.platform_adaptations[k].length < 1) missing.push(`platform_adaptations.${k}`);\n  for (const k of ['why_now','business_implication','next_question']) if (!isNonEmptyString(parsed.commercial_editorial_note?.[k])) missing.push(`commercial_editorial_note.${k}`);\n  if (!isArray(parsed.commercial_editorial_note?.who_should_care) || parsed.commercial_editorial_note.who_should_care.length < 1) missing.push('commercial_editorial_note.who_should_care');\n  if (!isNonEmptyString(parsed.quality_control?.copyright_note)) missing.push('quality_control.copyright_note');\n  if (!isArray(parsed.quality_control?.fact_check_required)) missing.push('quality_control.fact_check_required');\n  if (!isArray(parsed.quality_control?.risk_flags)) missing.push('quality_control.risk_flags');\n  if (typeof parsed.quality_control?.ready_for_human_review !== 'boolean') missing.push('quality_control.ready_for_human_review');\n}\nif (!parsed || missing.length || !isNonEmptyString(parsed?.source_url)) {\n  if (!missing.includes('source_url')) missing.push('source_url');\n  return { json: { ...original, generation_status: missing.includes('source_url') ? 'blocked_missing_source' : 'blocked_incomplete_draft', missing_fields: [...new Set(missing)], quality_control: { ...(parsed?.quality_control || {}), ready_for_human_review: false } } };\n}\nreturn { json: { ...original, ...parsed, generation_status: 'draft_generated', generated_at: new Date().toISOString() } };"
+        },
+        "id": "b91f404e-c8b0-49c5-9022-740c8489b467",
+        "name": "解析双语图文JSON",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1264,
+          272
+        ]
+      },
+      {
+        "parameters": {
+          "numberInputs": 3
+        },
+        "id": "1367290c-b1fe-4f26-be91-3dbee5f819b7",
+        "name": "等待YouTube数据汇合",
+        "type": "n8n-nodes-base.merge",
+        "typeVersion": 3.2,
+        "position": [
+          656,
+          80
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const src = $json;\nconst input = {\n  content_id: src.content_id ?? null,\n  source_url: src.source_url ?? null,\n  title: src.title ?? null,\n  description: src.description ?? null,\n  author: src.author ?? null,\n  published_at: src.published_at ?? null,\n  language: src.language ?? null,\n  content_type: src.content_type ?? null,\n  view_count: src.view_count ?? 0,\n  like_count: src.like_count ?? 0,\n  comment_count: src.comment_count ?? 0,\n  viral_score: src.viral_score ?? 0,\n  ai_summary: src.ai_summary ?? null,\n  commercial_value: src.commercial_value ?? null,\n  business_analysis: src.business_analysis ?? null,\n  summary_zh: src.summary_zh ?? null,\n  summary_en: src.summary_en ?? null,\n  key_facts: src.key_facts ?? [],\n  why_it_may_work: src.why_it_may_work ?? null,\n  risk_flags: src.risk_flags ?? [],\n  uncertainty: src.uncertainty ?? [],\n  web_research_results: src.web_research_results ?? [],\n  official_source_candidates: src.official_source_candidates ?? [],\n  official_source_url: src.official_source_url ?? null,\n  official_source_title: src.official_source_title ?? null,\n  official_image_url: src.official_image_url ?? null,\n  asset_source: src.asset_source ?? null,\n  rights_status: src.rights_status ?? null\n};\nreturn { json: { ...src, request_body: { model: 'deepseek-chat', messages: [{ role: 'system', content: \"你是机器人产业内容生产 Agent，负责把已经通过热点筛选的机器人内容转化为可发布的中英文图文素材。\\n\\n你的首要原则是事实边界。你只能使用输入内容中明确存在的事实，或者把推断明确标记为推断。不得使用输入之外的训练知识补充公司历史、行业地位、此前项目、客户或技术背景；即使这些内容可能真实，只要输入没有提供，就必须写入 unknowns 或 fact_check_required，不得写进正文。绝对不能虚构公司客户、收入、融资、市场份额、部署数量、技术性能、测试结果、发布日期或“全球第一”等结论。播放量、点赞数和评论数只能证明内容传播表现，不能直接证明商业价值。\\n\\n你必须同时完成五件事：提炼已确认事实；区分推断和未知信息；写出适合中文读者的中文图文稿；写出不是逐句直译、但与中文事实边界一致的英文适配稿；生成主视觉和信息卡的图片计划，以及 LinkedIn、X、YouTube Community 等平台适配文本。\\n\\n内容必须回答：发生了什么、机器人具体做了什么、为什么现在值得关注、谁可能受影响或受益、商业价值在哪里、还缺什么证据。中文稿不是原文翻译，英文稿也不是中文逐句翻译。\\n\\n图片计划只能描述画面，不得虚构公司 Logo、品牌名称、数据、新闻标题或事实性文字。保留 source_url；如果来源、授权状态或事实不完整，必须写入 copyright_note、fact_check_required 或 risk_flags，并将 ready_for_human_review 设为 false。\\n\\n只返回一个严格 JSON 对象。不要返回 Markdown 代码块、解释文字、前缀或后缀。必须保留全部字段；没有证据时使用 null、空数组或“暂无证据”，不能删除字段、改名或扁平化 commercial_editorial_note。\" }, { role: 'user', content: '请将下面这条已通过热点筛选的机器人内容生成第一版可发布的中英文图文草稿。中文正文目标500–800字，英文正文目标180–260词；如证据不足，不要补写事实。只返回完整JSON。\\n\\n输入内容：' + JSON.stringify(input) + '\\n\\n完整JSON契约：' + JSON.stringify({\"content_id\":\"\",\"source_url\":\"\",\"editorial_angle\":\"\",\"fact_boundary\":{\"confirmed_facts\":[],\"inferences\":[],\"unknowns\":[]},\"chinese\":{\"title\":\"\",\"subtitle\":\"\",\"body\":\"\",\"hook\":\"\",\"discussion_question\":\"\",\"hashtags\":[],\"image_overlay_text\":[\"\",\"\",\"\"]},\"english\":{\"title\":\"\",\"subtitle\":\"\",\"body\":\"\",\"hook\":\"\",\"discussion_question\":\"\",\"hashtags\":[],\"image_overlay_text\":[\"\",\"\",\"\"]},\"image_plan\":{\"hero_prompt\":\"\",\"info_card_points\":[\"\",\"\",\"\"],\"aspect_ratios\":[\"1:1\",\"16:9\",\"4:5\"]},\"platform_adaptations\":{\"linkedin_zh\":\"\",\"linkedin_en\":\"\",\"x_thread_zh\":[],\"x_thread_en\":[],\"youtube_community_zh\":\"\",\"youtube_community_en\":\"\"},\"commercial_editorial_note\":{\"why_now\":\"\",\"who_should_care\":[],\"business_implication\":\"\",\"next_question\":\"\"},\"quality_control\":{\"copyright_note\":\"\",\"fact_check_required\":[],\"risk_flags\":[],\"ready_for_human_review\":false}}) }], temperature: 0.35, response_format: { type: 'json_object' } } } };"
+        },
+        "id": "268f7f98-e897-416e-8e5f-ced45f0279af",
+        "name": "准备双语图文请求",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1072,
+          304
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const draft = $json;\nconst qc = draft.quality_control || {};\nconst hasContent = draft.chinese && draft.english && draft.content_id && !draft.error;\nconst status = !hasContent\n  ? 'failed_missing_bilingual_content'\n  : (qc.ready_for_human_review === true ? 'ready_for_review' : 'blocked_fact_check');\nreturn { json: {\n  content_id: draft.content_id || null,\n  route: 'bilingual_image_text',\n  task_type: 'bilingual_social_draft',\n  status,\n  owner: 'content-agent',\n  input_payload: {\n    source_url: draft.source_url || null,\n    title: draft.title || null,\n    language: draft.language || null,\n    content_type: draft.content_type || null,\n    viral_score: draft.viral_score ?? null,\n    view_count: draft.view_count ?? 0,\n    like_count: draft.like_count ?? 0,\n    comment_count: draft.comment_count ?? 0\n  },\n  output_payload: draft,\n  due_at: null\n} };"
+        },
+        "id": "5ca76bdf-cebe-4391-8446-0c21f24cd019",
+        "name": "准备生产任务记录",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1408,
+          432
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_production_tasks",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              },
+              {
+                "name": "Content-Profile",
+                "value": "public"
+              },
+              {
+                "name": "Accept-Profile",
+                "value": "public"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "application/json",
+          "body": "={{ JSON.stringify($json) }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "d81a70b1-e6f6-49aa-bb9e-30b2f67561ec",
+        "name": "写入生产任务Supabase",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1632,
+          432
+        ],
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "credentials": {
+          "supabaseApi": {
+            "id": "RWutEuXYEHFGbcFy",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const draft = $json;\nconst normalizeConfidence = (value) => {\n  if (value === null || value === undefined || value === '') return null;\n  let n = Number(value);\n  if (!Number.isFinite(n)) return null;\n  if (n > 1 && n <= 100) n = n / 100;\n  return Math.max(0, Math.min(1, Number(n.toFixed(3))));\n};\nconst sourceItems = $('解析商业分析JSON').all();\nconst draftContentId = draft.content_id || draft.video_id || null;\nconst base = sourceItems.find(item => item.json?.content_id === draftContentId)?.json || sourceItems[$itemIndex]?.json || {};\nconst qc = draft.quality_control || {};\nconst commercial = draft.commercial_editorial_note || {};\nconst facts = draft.fact_boundary || {};\nconst hasValue = (value) => value !== undefined && value !== null && value !== '' && !(Array.isArray(value) && value.length === 0) && !(typeof value === 'object' && value !== null && Object.keys(value).length === 0);\nconst firstValid = (...values) => values.find(hasValue);\nconst assetFields = {};\nfor (const key of ['content_visual_binding_key','image_title_overlay_language','image_title_overlay_status','asset_kind','asset_selection_reason','asset_subject','asset_match_status','official_image_url','official_source_url']) {\n  const value = firstValid(draft[key], base[key]);\n  if (hasValue(value)) assetFields[key] = value;\n}\nreturn { json: {\n  content_id: draft.content_id || base.content_id,\n  platform: base.platform || 'YouTube',\n  source: base.source || 'YouTube Data API',\n  source_url: draft.source_url || base.source_url || null,\n  video_id: base.video_id || null,\n  title: base.title || draft.chinese?.title || draft.english?.title || 'Untitled',\n  description: base.description || null,\n  author: base.author || null,\n  channel_id: base.channel_id || null,\n  published_at: base.published_at || null,\n  thumbnail: base.thumbnail || null,\n  language: base.language || null,\n  content_type: base.content_type || 'video',\n  robotics_topic: base.robotics_topic || 'robotics',\n  view_count: base.view_count ?? 0,\n  like_count: base.like_count ?? 0,\n  comment_count: base.comment_count ?? 0,\n  favorite_count: base.favorite_count ?? 0,\n  engagement: base.engagement || {},\n  viral_score: base.viral_score ?? null,\n  score_source: base.score_source || 'DeepSeek',\n  ai_summary: draft.editorial_angle || base.ai_summary || null,\n  status: draft.generation_status || 'draft_generated',\n  is_robotics: base.business_analysis?.is_robotics ?? null,\n  category: base.business_analysis?.category ?? base.category ?? null,\n  summary_zh: draft.chinese?.body || draft.summary_zh || draft.business_analysis?.summary_zh || null,\n  summary_en: draft.english?.body || draft.summary_en || draft.business_analysis?.summary_en || null,\n  chinese: draft.chinese || {},\n  english: draft.english || {},\n  image_plan: draft.image_plan || {},\n  platform_adaptations: draft.platform_adaptations || {},\n  fact_boundary: draft.fact_boundary || {},\n  quality_control: draft.quality_control || {},\n  key_facts: facts.confirmed_facts || [],\n  why_it_may_work: commercial.why_now || base.business_analysis?.why_it_may_work || base.why_it_may_work || null,\n  hook: draft.chinese?.hook || draft.english?.hook || null,\n  target_audience: commercial.who_should_care || [],\n  analyzed_content_type: 'bilingual_image_text',\n  analyzed_language: 'zh-en',\n  recommended_route: 'bilingual_image_text',\n  priority: base.business_analysis?.priority ?? base.priority ?? null,\n  keep: base.business_analysis?.keep ?? base.keep ?? null,\n  confidence: normalizeConfidence(base.business_analysis?.confidence ?? base.analysis_confidence),\n  analysis_confidence: normalizeConfidence(base.business_analysis?.confidence ?? base.analysis_confidence),\n  commercial_value: base.business_analysis?.commercial_value ?? base.commercial_value ?? {},\n  risk_flags: qc.risk_flags || base.risk_flags || [],\n  uncertainty: facts.unknowns || base.uncertainty || [],\n  analysis_status: 'bilingual_draft_generated',\n  final_route: 'bilingual_image_text',\n  next_module: qc.ready_for_human_review === true ? 'human_review' : 'fact_check',\n  official_source_url: assetFields.official_source_url ?? null,\n  official_source_title: draft.official_source_title || base.official_source_title || null,\n  official_image_url: assetFields.official_image_url ?? null,\n  asset_source: draft.asset_source || base.asset_source || null,\n  rights_status: draft.rights_status || base.rights_status || 'official_source_not_confirmed',\n  image_asset_status: draft.official_image_url ? 'candidate_found_review_required' : 'not_found',\n  approval_status: 'pending_approval',\n  x_publish_status: 'pending_approval',\n  ...assetFields,\n  raw_search_item: base.raw_search_item || {},\n  raw_statistics_item: base.raw_statistics_item || {},\n  raw_deepseek_item: { score: base.raw_deepseek_item || {}, business_analysis: base.business_analysis || {}, bilingual_draft: draft },\n  collected_at: base.collected_at || new Date().toISOString(),\n  analyzed_at: new Date().toISOString(),\n  route_decision_at: new Date().toISOString()\n} };"
+        },
+        "id": "302d4ae3-b7d2-4580-995b-4950093d0f8e",
+        "name": "准备内容最终回写",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1408,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?on_conflict=content_id",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              },
+              {
+                "name": "Content-Profile",
+                "value": "public"
+              },
+              {
+                "name": "Accept-Profile",
+                "value": "public"
+              }
+            ]
+          },
+          "sendBody": true,
+          "contentType": "raw",
+          "rawContentType": "application/json",
+          "body": "={{ (() => {\n  const row = $json || {};\n  const allowed = [\"content_id\", \"platform\", \"source\", \"source_url\", \"video_id\", \"title\", \"description\", \"author\", \"channel_id\", \"published_at\", \"thumbnail\", \"language\", \"content_type\", \"robotics_topic\", \"view_count\", \"like_count\", \"comment_count\", \"favorite_count\", \"engagement\", \"viral_score\", \"score_source\", \"ai_summary\", \"status\", \"is_robotics\", \"robotics_relevance\", \"category\", \"summary_zh\", \"summary_en\", \"key_facts\", \"why_it_may_work\", \"hook\", \"target_audience\", \"analyzed_content_type\", \"analyzed_language\", \"recommended_route\", \"priority\", \"keep\", \"analysis_confidence\", \"risk_flags\", \"uncertainty\", \"analysis_status\", \"final_route\", \"next_module\", \"raw_search_item\", \"raw_statistics_item\", \"raw_deepseek_item\", \"collected_at\", \"analyzed_at\", \"route_decision_at\"];\n  const out = {};\n  for (const key of allowed) {\n    if (row[key] !== undefined) out[key] = row[key];\n  }\n  out.content_id = row.content_id || `youtube_${row.video_id || Date.now()}`;\n  out.platform = row.platform || 'YouTube';\n  out.source = row.source || 'YouTube Data API';\n  out.title = row.title || 'Untitled';\n  out.status = row.status || 'draft_generated';\n  out.view_count = Number(row.view_count || 0);\n  out.like_count = Number(row.like_count || 0);\n  out.comment_count = Number(row.comment_count || 0);\n  out.favorite_count = Number(row.favorite_count || 0);\n  out.engagement = row.engagement || {};\n  out.key_facts = row.key_facts || [];\n  out.target_audience = row.target_audience || [];\n  out.risk_flags = row.risk_flags || [];\n  out.uncertainty = row.uncertainty || [];\n  out.raw_search_item = row.raw_search_item || {};\n  out.raw_statistics_item = row.raw_statistics_item || {};\n  out.raw_deepseek_item = { ...(row.raw_deepseek_item || {}), official_research: { official_source_url: row.official_source_url || null, official_source_title: row.official_source_title || null, official_image_url: row.official_image_url || null, asset_source: row.asset_source || null, rights_status: row.rights_status || null, approval_status: row.approval_status || 'pending_approval', x_publish_status: row.x_publish_status || 'pending_approval' } };\n  return JSON.stringify(out);\n})() }}",
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "2a5881fe-222d-4d47-89a0-5ce4d1b5522b",
+        "name": "更新Supabase完整内容",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          1616,
+          288
+        ],
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "credentials": {
+          "supabaseApi": {
+            "id": "RWutEuXYEHFGbcFy",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const s = $json;\nconst input = {\n  content_id: s.content_id ?? null,\n  source_url: s.source_url ?? null,\n  title: s.title ?? null,\n  description: s.description ?? null,\n  author: s.author ?? null,\n  published_at: s.published_at ?? null,\n  language: s.language ?? null,\n  content_type: s.content_type ?? null,\n  view_count: s.view_count ?? 0,\n  like_count: s.like_count ?? 0,\n  comment_count: s.comment_count ?? 0,\n  viral_score: s.viral_score ?? 0,\n  ai_summary: s.ai_summary ?? null,\n  source_evidence: s.raw_search_item ?? {},\n  statistics_evidence: s.raw_statistics_item ?? {}\n};\nreturn { json: { ...s, commercial_request_body: { model: 'deepseek-chat', messages: [\n  { role: 'system', content: `你是机器人产业情报与商业分析 Agent。你只能使用输入中明确提供的事实；禁止补充输入之外的公司背景、客户、收入、融资、市场份额、部署数量、技术性能或行业排名。播放量、点赞数和评论数只能说明传播表现，不能直接证明商业价值。请分别评估市场变化、客户需求、产品机会、技术能力、竞争信号和内容传播价值，并为每个判断提供 evidence 与 implication。若证据不足，使用 null、空数组或“暂无证据”。只返回一个严格 JSON 对象，不要 Markdown、解释文字或前后缀。` },\n  { role: 'user', content: `请分析以下已通过机器人热点初筛的内容，并输出完整商业价值 JSON：\\n\\n${JSON.stringify(input)}\\n\\nJSON契约：${JSON.stringify({\n    content_id:'', is_robotics:false, category:'', summary_zh:'', summary_en:'', why_it_may_work:'', hook:'', priority:'C', keep:false,\n    commercial_value:{overall_score:null, market_signal:{score:null,evidence:[],implication:''}, customer_signal:{score:null,evidence:[],implication:''}, product_signal:{score:null,evidence:[],implication:''}, technology_signal:{score:null,evidence:[],implication:''}, competition_signal:{score:null,evidence:[],implication:''}, content_signal:{score:null,evidence:[],implication:''}, potential_payers:[], value_chain_impact:[], questions_to_validate:[]},\n    risk_flags:[], uncertainty:[], confidence:null\n  })}` }\n], temperature: 0.2, response_format: { type: 'json_object' } } } };"
+        },
+        "id": "466243b0-e41a-46ee-a563-fe8c3c4b9ef2",
+        "name": "准备商业分析请求",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          912,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/v1/chat/completions",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Authorization",
+                "value": "Bearer <DEEPSEEK_API_KEY>"
+              },
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ $json.commercial_request_body }}",
+          "options": {}
+        },
+        "id": "f0cc3f15-76a9-4d76-98c2-78a5789d78b7",
+        "name": "DeepSeek商业分析",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1120,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const raw = $json.choices?.[0]?.message?.content ?? $json.content ?? $json.text ?? '';\nfunction parse(value) {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string' || !value.trim()) return null;\n  const cleaned=value.replace(/^```json\\s*/i,'').replace(/^```\\s*/i,'').replace(/\\s*```$/i,'').trim();\n  try { return JSON.parse(cleaned); } catch (_) {}\n  const m=cleaned.match(/\\{[\\s\\S]*\\}/); if (!m) return null;\n  try { return JSON.parse(m[0]); } catch (_) { return null; }\n}\nconst parsed=parse(raw);\nconst requestItems = $('准备商业分析请求').all();\nconst source = requestItems[$itemIndex]?.json || $json;\nconst missing=[];\nfor (const k of ['content_id','is_robotics','category','commercial_value','priority','keep','risk_flags','uncertainty','confidence']) if (!parsed || !Object.prototype.hasOwnProperty.call(parsed,k)) missing.push(k);\nif (parsed && (!parsed.commercial_value || typeof parsed.commercial_value !== 'object')) missing.push('commercial_value');\nreturn { json: { ...source, business_analysis: parsed || {}, commercial_value: parsed?.commercial_value || {}, commercial_analysis_status: parsed && !missing.length ? 'generated' : 'blocked_incomplete', commercial_analysis_missing: [...new Set(missing)], commercial_analysis_raw: raw } };"
+        },
+        "id": "21198a25-084c-46d6-8261-76679d4af2ce",
+        "name": "解析商业分析JSON",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1328,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const items = $input.all().map(i => i.json || {});\nreturn items.sort((a,b) => Number(b.viral_score || 0) - Number(a.viral_score || 0)).map((json,index) => ({json:{...json, screening_rank:index+1, screening_status:'selected_for_analysis', recommended_route:'commercial_analysis'}}));"
+        },
+        "id": "screening-node-001",
+        "name": "筛选热点并排序",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          800,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const row = $json || {};\nconst originalItems = $('准备内容最终回写').all();\nconst original = originalItems.find(item => item.json?.content_id === row.content_id)?.json || {};\nconst merged = { ...original, ...row };\nfor (const key of ['official_source_url','official_source_title','official_image_url','asset_source','rights_status','image_asset_status','approval_status','x_publish_status']) {\n  if (original[key] !== undefined && (row[key] === undefined || row[key] === null || row[key] === '')) merged[key] = original[key];\n}\nconst required = ['content_id','commercial_value','category','confidence','summary_zh','summary_en','chinese','english'];\nconst missing = required.filter(k => merged[k] === null || merged[k] === undefined || merged[k] === '' || (typeof merged[k] === 'object' && merged[k] !== null && !Object.keys(merged[k]).length));\nreturn { json: {\n  ...merged,\n  write_status: missing.length ? 'incomplete_analysis' : 'upserted_and_validated',\n  write_missing_fields: missing\n} };"
+        },
+        "id": "assert-update-001",
+        "name": "断言Supabase更新命中",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1744,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{ 'https://news.google.com/rss/search?q=' + encodeURIComponent(($json.title || '') + ' ' + ($json.author || '') + ' robotics official news') + '&hl=en-US&gl=US&ceid=US:en' }}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "检索官网与新闻来源-id",
+        "name": "检索官网与新闻来源",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1008,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const raw = typeof $json === 'string' ? $json : ($json.data || $json.body || $json.text || '');\nconst original = $('筛选热点并排序').item.json;\nconst text = String(raw || '');\nconst items = [...text.matchAll(/<item>([\\s\\S]*?)<\\/item>/gi)].map(m => m[1]);\nconst decode = (s) => String(s || '').replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1').replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\").trim();\nconst results = items.slice(0, 12).map(block => {\n  const title = decode(block.match(/<title>([\\s\\S]*?)<\\/title>/i)?.[1]);\n  const link = decode(block.match(/<link>([\\s\\S]*?)<\\/link>/i)?.[1]);\n  const sourceMatch = block.match(/<source[^>]*url=[\"']([^\"']+)[\"'][^>]*>([\\s\\S]*?)<\\/source>/i);\n  return { title, url: link, source_name: decode(sourceMatch?.[2]), source_url: sourceMatch?.[1] || null };\n}).filter(x => x.title && x.url);\nconst companyHint = `${original.title || ''} ${original.author || ''}`.toLowerCase();\nconst likelyOfficial = results.find(x => {\n  const source = `${x.source_name || ''} ${x.source_url || ''}`.toLowerCase();\n  return ['official','deepmind','google','figure','agility','boston dynamics','tesla','nvidia','openai','robotics'].some(k => source.includes(k) && companyHint.includes(k.split(' ')[0]));\n}) || null;\nreturn { json: {\n  ...original,\n  web_research_results: results,\n  official_source_candidates: results,\n  official_source_url: likelyOfficial?.source_url || null,\n  official_source_title: likelyOfficial?.title || null,\n  official_source_name: likelyOfficial?.source_name || null,\n  research_status: results.length ? 'candidates_found' : 'no_candidates_found',\n  rights_status: likelyOfficial ? 'official_source_candidate_found_review_required' : 'official_source_not_confirmed'\n} };"
+        },
+        "id": "解析官网与新闻候选-id",
+        "name": "解析官网与新闻候选",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1232,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "official-source-present",
+                "leftValue": "={{$json.official_source_url}}",
+                "rightValue": "",
+                "operator": {
+                  "type": "string",
+                  "operation": "notEmpty"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "official-source-if-id",
+        "name": "是否存在官方来源",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1456,
+          368
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$json.official_source_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "text"
+              }
+            }
+          }
+        },
+        "id": "获取官方来源页面-id",
+        "name": "获取官方来源页面",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1680,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const page = String($json.data || $json.body || $json.text || '');\nconst source = $('解析官网与新闻候选').item.json;\nconst decode = (v) => String(v || '')\n  .replace(/<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>/g, '$1')\n  .replace(/&amp;/g, '&').replace(/&quot;/g, '\"').replace(/&#39;/g, \"'\")\n  .replace(/&#x2F;/gi, '/').trim();\nconst absolute = (u) => {\n  try { return new URL(decode(u), source.official_source_url || 'https://deepmind.google').toString(); }\n  catch { return decode(u); }\n};\nconst findMeta = (property) => {\n  const p = property.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\n  const patterns = [\n    new RegExp(`<meta[^>]+(?:property|name)=[\"']${p}[\"'][^>]*content=[\"']([^\"']+)[\"']`, 'i'),\n    new RegExp(`<meta[^>]+content=[\"']([^\"']+)[\"'][^>]*(?:property|name)=[\"']${p}[\"']`, 'i')\n  ];\n  for (const re of patterns) { const m = page.match(re); if (m?.[1]) return absolute(m[1]); }\n  return null;\n};\nconst candidates = [];\nconst push = (url, kind, context='') => {\n  const u = absolute(url);\n  if (!u || !/^https?:\\/\\//i.test(u)) return;\n  if (!candidates.some(x => x.url === u)) candidates.push({ url: u, kind, context: String(context || '').toLowerCase() });\n};\npush(findMeta('og:image'), 'og:image');\npush(findMeta('twitter:image'), 'twitter:image');\nfor (const m of page.matchAll(/<(?:img|source)[^>]+(?:src|data-src|srcset|data-srcset)=[\"']([^\"' ,]+)[\"'][^>]*>/gi)) {\n  const whole = m[0].toLowerCase();\n  push(m[1], 'page-image', whole);\n}\nconst identity = `${source.title || ''} ${source.author || ''} ${source.official_source_url || ''} ${source.official_source_name || ''}`.toLowerCase();\nconst isGeminiRobotics2 = identity.includes('gemini robotics 2') || (identity.includes('gemini') && identity.includes('robotics'));\n// This is a stable, high-resolution image embedded in the official DeepMind article,\n// and is preferred over the article-level og:image when the subject is Gemini Robotics 2.\nconst deepmindSubjectAsset = 'https://files.manuscdn.com/user_upload_by_module/session_file/310519663137102957/eAfqiQhmloRwWhao.png';\nlet selected = null;\nlet reason = '';\nif (isGeminiRobotics2 && /deepmind\\.google|google/i.test(identity)) {\n  selected = { url: deepmindSubjectAsset, kind: 'official_article_subject_asset_with_english_overlay', context: 'Gemini Robotics 2 official robot image with approved English title overlay' };\n  reason = 'subject-specific official DeepMind article asset overrides generic og:image';\n} else {\n  const subjectTokens = identity.split(/[^a-z0-9]+/i).filter(x => x.length >= 4);\n  const ranked = candidates.map(c => {\n    let score = c.kind === 'og:image' ? 1 : c.kind === 'twitter:image' ? 2 : 4;\n    if (/(robot|robotics|apollo|gemini|deepmind|humanoid|manipulat|gripper)/i.test(c.url + ' ' + c.context)) score += 8;\n    for (const t of subjectTokens) if ((c.url + ' ' + c.context).includes(t)) score += 2;\n    return { ...c, score };\n  }).sort((a,b) => b.score-a.score);\n  selected = ranked[0] || null;\n  reason = selected ? `ranked official page asset; score=${selected.score}` : 'no official image candidate';\n}\nconst image = selected?.url || null;\nconst bindingKey = [source.content_id || source.video_id || source.source_url || '', image || '', source.official_source_url || ''].join('|');\nreturn { json: {\n  ...source,\n  official_image_url: image,\n  image_source_url: source.official_source_url || null,\n  asset_source: image ? (source.official_source_name || source.official_source_url || 'official source page') : null,\n  asset_kind: selected?.kind || null,\n  image_title_overlay_language: isGeminiRobotics2 ? 'en' : null,\n  image_title_overlay_status: isGeminiRobotics2 ? 'restored_from_user_confirmed_yesterday_asset' : null,\n  asset_selection_reason: reason,\n  asset_subject: isGeminiRobotics2 ? 'Gemini Robotics 2' : (source.title || null),\n  asset_match_status: image && (isGeminiRobotics2 || /robot|robotics|humanoid|apollo|gemini/i.test(`${selected?.url || ''} ${selected?.context || ''}`)) ? 'subject_matched_official' : 'needs_manual_visual_review',\n  content_visual_binding_key: bindingKey,\n  rights_status: image ? 'official_image_found_review_required' : 'official_page_without_image',\n  asset_status: image ? 'official_image_candidate_found' : 'official_image_not_found'\n} };"
+        },
+        "id": "解析官方图片资产-id",
+        "name": "解析官方图片资产",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1904,
+          288
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const source = $json;\nreturn { json: {\n  ...source,\n  official_image_url: null,\n  image_source_url: null,\n  asset_source: null,\n  asset_status: 'official_source_not_confirmed',\n  rights_status: 'official_source_not_confirmed'\n} };"
+        },
+        "id": "标记无官方来源-id",
+        "name": "标记无官方来源",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1680,
+          464
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "leftValue": "",
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "x-approval",
+                "leftValue": "={{$json.status}}",
+                "rightValue": "approved",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          },
+          "options": {}
+        },
+        "id": "x-approval-if-id",
+        "name": "X发布审批闸门",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1968,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const s = ($json && $json.body && typeof $json.body === 'object') ? $json.body : $json;\nconst confirmed = typeof s.x_text_en === 'string' && s.x_text_en.trim() ? s.x_text_en.trim() : null;\nconst xParts = s.platform_adaptations?.x_thread_en;\nconst candidate = Array.isArray(xParts) ? xParts[0] : null;\nconst body = confirmed || candidate || s.english?.hook || s.summary_en || s.english?.body || '';\nconst tags = confirmed ? '' : (Array.isArray(s.english?.hashtags) ? s.english.hashtags.slice(0, 3).map(x => `#${String(x).replace(/^#/, '')}`).join(' ') : '');\nconst text = confirmed || [body.trim(), tags, s.source_url ? `Source: ${s.source_url}` : ''].filter(Boolean).join('\\n\\n');\nconst errors = [];\nif (!s.official_image_url) errors.push('official_image_url_missing');\nif (s.image_title_overlay_language !== 'en') errors.push('english_image_title_overlay_missing');\nif (!s.content_visual_binding_key) errors.push('content_visual_binding_missing');\nif (!s.official_source_url) errors.push('official_source_url_missing');\nif (!text.trim()) errors.push('x_text_missing');\nif (/[\\u4e00-\\u9fff]/.test(text)) errors.push('x_text_not_english');\nif (text.length > 280 && !s.allow_long_post) errors.push(`x_text_over_280:${text.length}`);\nreturn { json: { ...s, x_text_en: text, x_validation_errors: errors, x_publish_status: errors.length ? 'blocked_validation' : 'ready_to_publish' } };"
+        },
+        "id": "准备X发布内容-id",
+        "name": "准备X发布内容",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          2208,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$json.official_image_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "下载官方图片二进制-id",
+        "name": "下载官方图片二进制",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2448,
+          176
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.x.com/2/media/upload",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "twitterOAuth1Api",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "media",
+                "inputDataFieldName": "data"
+              },
+              {
+                "parameterType": "formData",
+                "name": "media_category",
+                "value": "tweet_image"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "id": "X上传官方图片-id",
+        "name": "X上传官方图片",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2688,
+          176
+        ],
+        "credentials": {
+          "twitterOAuth1Api": {
+            "id": "oSQyARPK9p9y9svw",
+            "name": "X OAuth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.x.com/2/tweets",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "twitterOAuth1Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ text: $('准备X发布内容').item.json.x_text_en, media: { media_ids: [$json.data.id] } }) }}",
+          "options": {}
+        },
+        "id": "X发布图片帖子-id",
+        "name": "X发布图片帖子",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2928,
+          176
+        ],
+        "credentials": {
+          "twitterOAuth1Api": {
+            "id": "oSQyARPK9p9y9svw",
+            "name": "X OAuth account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?select=*&limit=100",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Profile",
+                "value": "public"
+              },
+              {
+                "name": "Accept-Profile",
+                "value": "public"
+              }
+            ]
+          },
+          "options": {
+            "timeout": 30000
+          }
+        },
+        "id": "approval-scan-query-id",
+        "name": "扫描Supabase已批准待发布内容",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -180,
+          720
+        ],
+        "alwaysOutputData": true,
+        "retryOnFail": true,
+        "maxTries": 3,
+        "waitBetweenTries": 2000,
+        "credentials": {
+          "supabaseApi": {
+            "id": "RWutEuXYEHFGbcFy",
+            "name": "Supabase account"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const rows = $input.all().flatMap(i => Array.isArray(i.json) ? i.json : [i.json]).filter(Boolean);\nconst out=[];\nfor (const row of rows) {\n  const research = row.raw_deepseek_item?.official_research || row.official_research || {};\n  const approval_status = row.status || research.status || 'pending_approval';\n  const x_publish_status = row.x_publish_status || research.x_publish_status || 'pending_approval';\n  if (approval_status !== 'approved') continue;\n  if (['published','posted','success'].includes(String(x_publish_status))) continue;\n  const x_text_en = row.x_text_en || research.x_text_en || row.platform_adaptations?.x_text_en || row.english?.x_text_en || row.summary_en || row.english || '';\n  const official_image_url = row.official_image_url || research.official_image_url || null;\n  const official_source_url = row.official_source_url || research.official_source_url || null;\n  const content_visual_binding_key = row.content_visual_binding_key || research.content_visual_binding_key || `${row.content_id || ''}|${official_image_url || ''}`;\n  out.push({json:{...row, status: approval_status, x_publish_status, x_text_en, official_image_url, official_source_url, content_visual_binding_key, image_title_overlay_language: row.image_title_overlay_language || research.image_title_overlay_language || 'en', allow_long_post:true, approval_scan_source:'main_hourly_approval_scan'}});\n}\nreturn out;"
+        },
+        "id": "approval-scan-filter-id",
+        "name": "筛选已批准待发布内容",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          80,
+          720
+        ]
+      }
+    ],
+    "connections": {
+      "每小时触发": {
+        "main": [
+          [
+            {
+              "node": "搜索YouTube",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "扫描Supabase已批准待发布内容",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "搜索YouTube": {
+        "main": [
+          [
+            {
+              "node": "HTTP Request",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "YouTube视频统计",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "等待YouTube数据汇合",
+              "type": "main",
+              "index": 2
+            }
+          ]
+        ]
+      },
+      "HTTP Request": {
+        "main": [
+          [
+            {
+              "node": "等待YouTube数据汇合",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "Code in JavaScript": {
+        "main": [
+          [
+            {
+              "node": "存入Supabase",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "筛选热点并排序",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "YouTube视频统计": {
+        "main": [
+          [
+            {
+              "node": "等待YouTube数据汇合",
+              "type": "main",
+              "index": 1
+            }
+          ]
+        ]
+      },
+      "DeepSeek双语图文生产": {
+        "main": [
+          [
+            {
+              "node": "解析双语图文JSON",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "等待YouTube数据汇合": {
+        "main": [
+          [
+            {
+              "node": "Code in JavaScript",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备双语图文请求": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek双语图文生产",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析双语图文JSON": {
+        "main": [
+          [
+            {
+              "node": "准备内容最终回写",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备生产任务记录": {
+        "main": [
+          [
+            {
+              "node": "写入生产任务Supabase",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备内容最终回写": {
+        "main": [
+          [
+            {
+              "node": "更新Supabase完整内容",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "更新Supabase完整内容": {
+        "main": [
+          [
+            {
+              "node": "断言Supabase更新命中",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "准备商业分析请求": {
+        "main": [
+          [
+            {
+              "node": "DeepSeek商业分析",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "DeepSeek商业分析": {
+        "main": [
+          [
+            {
+              "node": "解析商业分析JSON",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析商业分析JSON": {
+        "main": [
+          [
+            {
+              "node": "准备双语图文请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "筛选热点并排序": {
+        "main": [
+          [
+            {
+              "node": "检索官网与新闻来源",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "断言Supabase更新命中": {
+        "main": [
+          [
+            {
+              "node": "准备生产任务记录",
+              "type": "main",
+              "index": 0
+            },
+            {
+              "node": "X发布审批闸门",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "检索官网与新闻来源": {
+        "main": [
+          [
+            {
+              "node": "解析官网与新闻候选",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析官网与新闻候选": {
+        "main": [
+          [
+            {
+              "node": "是否存在官方来源",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "是否存在官方来源": {
+        "main": [
+          [
+            {
+              "node": "获取官方来源页面",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          [
+            {
+              "node": "标记无官方来源",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "获取官方来源页面": {
+        "main": [
+          [
+            {
+              "node": "解析官方图片资产",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "解析官方图片资产": {
+        "main": [
+          [
+            {
+              "node": "准备商业分析请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "标记无官方来源": {
+        "main": [
+          [
+            {
+              "node": "准备商业分析请求",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "X发布审批闸门": {
+        "main": [
+          [
+            {
+              "node": "准备X发布内容",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "准备X发布内容": {
+        "main": [
+          [
+            {
+              "node": "下载官方图片二进制",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "下载官方图片二进制": {
+        "main": [
+          [
+            {
+              "node": "X上传官方图片",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "X上传官方图片": {
+        "main": [
+          [
+            {
+              "node": "X发布图片帖子",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "扫描Supabase已批准待发布内容": {
+        "main": [
+          [
+            {
+              "node": "筛选已批准待发布内容",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "筛选已批准待发布内容": {
+        "main": [
+          [
+            {
+              "node": "X发布审批闸门",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "KE WANG",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-16T03:20:06.957Z",
+        "id": 217,
+        "workflowId": "dXLL6RaVYyJUbAwO",
+        "versionId": "ffdaee6c-57a0-496e-9071-fda48a96abb9",
+        "event": "activated",
+        "userId": "b1dba454-5043-4566-9ac8-6d33dcbd0eac"
+      }
+    ]
+  }
 }
