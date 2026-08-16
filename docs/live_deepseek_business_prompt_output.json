@@ -1,0 +1,108 @@
+{
+  "test": "live_deepseek_business_prompt",
+  "passed": true,
+  "sample_input": {
+    "content_id": "youtube_business_test_001",
+    "source": "YouTube Data API",
+    "source_url": "https://www.youtube.com/watch?v=business-test-001",
+    "title": "Humanoid robots begin warehouse pilot with dual-arm picking demo",
+    "description": "A robotics company demonstrates a dual-arm humanoid robot handling mixed parcels in a warehouse pilot. The video shows the task but does not disclose customer name, deployment scale, or unit economics.",
+    "author": "Robotics Lab",
+    "published_at": "2026-08-14T00:00:00Z",
+    "language": "en",
+    "content_type": "video",
+    "view_count": 125000,
+    "like_count": 8300,
+    "comment_count": 640,
+    "viral_score": 88,
+    "ai_summary": "High-visibility warehouse humanoid robot demonstration."
+  },
+  "output": {
+    "is_robotics": true,
+    "robotics_relevance": "direct",
+    "category": "humanoid_robots",
+    "summary_zh": "一家机器人公司展示了双人形机器人在仓库试点中处理混合包裹的任务，视频展示了任务但未透露客户名称、部署规模或单位经济性。",
+    "summary_en": "A robotics company demonstrates a dual-arm humanoid robot handling mixed parcels in a warehouse pilot. The video shows the task but does not disclose customer name, deployment scale, or unit economics.",
+    "key_facts": [
+      "双人形机器人用于仓库试点",
+      "任务为混合包裹处理",
+      "未披露客户名称、部署规模或单位经济性",
+      "视频展示任务但无具体性能数据"
+    ],
+    "why_it_may_work": "高可见度的仓库人形机器人演示，结合了人形机器人和物流自动化热点，容易吸引行业关注。",
+    "hook": "人形机器人进入仓库：双人形机器人混合包裹处理演示，但关键细节未披露。",
+    "target_audience": [
+      "物流和仓储行业决策者",
+      "机器人技术爱好者",
+      "投资者和分析师",
+      "自动化解决方案采购方"
+    ],
+    "commercial_value": {
+      "overall_score": 7,
+      "market_signal": {
+        "score": 8,
+        "evidence": "仓库物流自动化市场需求旺盛，人形机器人是热点方向，视频获得高播放量（125k）和互动（8.3k赞，640评论），表明市场关注度高。",
+        "implication": "市场对人形机器人在仓储场景的应用兴趣浓厚，可能推动相关投资和合作。"
+      },
+      "customer_signal": {
+        "score": 5,
+        "evidence": "视频未披露客户名称，但演示本身暗示已有试点客户，具体客户信号未知。",
+        "implication": "潜在客户可能关注该技术，但缺乏具体客户案例，需进一步验证。"
+      },
+      "product_signal": {
+        "score": 6,
+        "evidence": "展示了双人形机器人处理混合包裹的能力，但未提供性能指标（如效率、准确率），产品成熟度未知。",
+        "implication": "产品功能有展示，但需更多数据评估商业化程度。"
+      },
+      "technology_signal": {
+        "score": 7,
+        "evidence": "双人形机器人协同工作，涉及先进的控制和感知技术，但视频未展示技术细节。",
+        "implication": "技术具有创新性，但需进一步了解技术壁垒和成熟度。"
+      },
+      "competitive_signal": {
+        "score": 7,
+        "evidence": "人形机器人在仓储领域竞争激烈，该演示表明公司在该领域有布局，但未与竞品对比。",
+        "implication": "竞争格局中，该演示可能提升公司地位，但需关注竞品动态。"
+      },
+      "content_signal": {
+        "score": 8,
+        "evidence": "视频播放量高（125k），互动率高（8.3k赞，640评论），viral_score 88，表明内容传播效果好。",
+        "implication": "内容具有高传播潜力，适合二次创作和推广。"
+      },
+      "who_may_pay": [
+        "物流仓储企业",
+        "自动化解决方案提供商",
+        "机器人制造商",
+        "投资机构"
+      ],
+      "value_chain_impact": [
+        "仓储物流环节",
+        "机器人本体制造",
+        "自动化系统集成"
+      ],
+      "business_questions": [
+        "客户名称和部署规模是什么？",
+        "单位经济性如何？",
+        "与竞品相比性能如何？",
+        "技术成熟度和可靠性如何？"
+      ]
+    },
+    "content_type": "video",
+    "language": "en",
+    "recommended_route": "video_remake",
+    "priority": "A",
+    "keep": true,
+    "next_action": "跟进视频中提到的公司，获取更多技术细节和客户信息，评估商业合作可能性。",
+    "confidence": 0.8,
+    "risk_flags": [
+      "未披露客户和部署规模，存在夸大宣传风险",
+      "视频可能为概念演示，实际性能未验证"
+    ],
+    "uncertainty": [
+      "客户身份未知",
+      "部署规模未知",
+      "单位经济性未知",
+      "技术性能数据缺失"
+    ]
+  }
+}

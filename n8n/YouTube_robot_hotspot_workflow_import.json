@@ -1,0 +1,330 @@
+{
+  "name": "YouTube机器人热点采集与内容路由（可导入版）",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "e70669a3-faec-4470-a837-1ec90bfb3c80",
+      "name": "每小时触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "q",
+              "value": "robot OR robotics"
+            },
+            {
+              "name": "maxResults",
+              "value": "10"
+            },
+            {
+              "name": "order",
+              "value": "relevance"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "5370d308-d63e-4812-848d-55bd0f50b7bc",
+      "name": "搜索YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        336,
+        0
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "EsaFRnRGRPTHifLw",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "content_items",
+        "dataToSend": "autoMapInputData"
+      },
+      "id": "3be45990-392c-4b2f-b983-ba9b872a15da",
+      "name": "存入Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1136,
+        0
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "RWutEuXYEHFGbcFy",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <DEEPSEEK_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"deepseek-chat\",\n  messages: [\n    {\n      role: \"system\",\n      content: \"你是机器人内容热点评分专家。对输入的视频列表逐条评分。只返回严格JSON数组，不要Markdown代码块。每个元素必须是 {\\\\\\\"video_id\\\\\\\":\\\\\\\"字符串\\\\\\\",\\\\\\\"score\\\\\\\":0到100的数字,\\\\\\\"reason\\\\\\\":\\\\\\\"简短中文理由\\\\\\\"}。评分综合考虑机器人相关性、时效性、传播潜力、新闻重要性、来源可信度和视觉传播价值。\"\n    },\n    {\n      role: \"user\",\n      content: \"请评分以下YouTube视频：\" + JSON.stringify($('搜索YouTube').first().json.items.map(item => ({\n        video_id: item.id?.videoId || \"\",\n        title: item.snippet?.title || \"\",\n        description: item.snippet?.description || \"\"\n      })))\n    }\n  ],\n  temperature: 0.3\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        656,
+        0
+      ],
+      "id": "80e6c9e3-163f-4842-ae71-d46107a04248",
+      "name": "DeepSeek评分",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 合并三类来源：YouTube Search、YouTube videos.list statistics、DeepSeek评分。\n// 输出：每个视频一条完整标准化记录，适合后续 Supabase 入库。\nconst searchResponse = $('搜索YouTube').first()?.json || {};\nconst statsResponse = $('YouTube视频统计').first()?.json || {};\nconst deepseekResponse = $('DeepSeek评分').first()?.json || {};\n\nconst searchItems = Array.isArray(searchResponse.items) ? searchResponse.items : [];\nconst statsItems = Array.isArray(statsResponse.items) ? statsResponse.items : [];\n\nconst statsByVideoId = new Map(\n  statsItems.map(item => [item.id, item])\n);\n\nfunction parseDeepSeekScores(response) {\n  const raw = response.choices?.[0]?.message?.content ?? response.content ?? response.text ?? '';\n  if (Array.isArray(raw)) return raw;\n  if (raw && typeof raw === 'object') return [raw];\n  if (typeof raw !== 'string' || !raw.trim()) return [];\n\n  const cleaned = raw\n    .replace(/^```json\\s*/i, '')\n    .replace(/^```\\s*/i, '')\n    .replace(/\\s*```$/i, '')\n    .trim();\n\n  try {\n    const parsed = JSON.parse(cleaned);\n    return Array.isArray(parsed) ? parsed : [parsed];\n  } catch (error) {\n    const arrayMatch = cleaned.match(/\\[[\\s\\S]*\\]/);\n    if (arrayMatch) {\n      try {\n        const parsed = JSON.parse(arrayMatch[0]);\n        return Array.isArray(parsed) ? parsed : [parsed];\n      } catch (_) {}\n    }\n    return [];\n  }\n}\n\nconst scoreItems = parseDeepSeekScores(deepseekResponse);\nconst scoreByVideoId = new Map(\n  scoreItems\n    .filter(item => item && item.video_id)\n    .map(item => [item.video_id, item])\n);\n\nreturn searchItems.map(item => {\n  const videoId = item.id?.videoId || item.id || '';\n  const snippet = item.snippet || {};\n  const stats = statsByVideoId.get(videoId) || {};\n  const statistics = stats.statistics || {};\n  const score = scoreByVideoId.get(videoId) || {};\n\n  return {\n    json: {\n      content_id: `youtube_${videoId}`,\n      platform: 'YouTube',\n      source: 'YouTube Data API',\n      source_url: videoId ? `https://www.youtube.com/watch?v=${videoId}` : '',\n      video_id: videoId,\n      title: snippet.title || stats.snippet?.title || '无标题',\n      description: snippet.description || stats.snippet?.description || '',\n      author: snippet.channelTitle || stats.snippet?.channelTitle || '未知作者',\n      channel_id: snippet.channelId || stats.snippet?.channelId || '',\n      published_at: snippet.publishedAt || stats.snippet?.publishedAt || null,\n      thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.default?.url || stats.snippet?.thumbnails?.high?.url || '',\n      language: 'en',\n      content_type: 'video',\n      robotics_topic: 'robotics',\n      view_count: Number(statistics.viewCount || 0),\n      like_count: Number(statistics.likeCount || 0),\n      comment_count: Number(statistics.commentCount || 0),\n      favorite_count: Number(statistics.favoriteCount || 0),\n      engagement: {\n        views: Number(statistics.viewCount || 0),\n        likes: Number(statistics.likeCount || 0),\n        comments: Number(statistics.commentCount || 0),\n        favorites: Number(statistics.favoriteCount || 0),\n      },\n      viral_score: score.score ?? null,\n      ai_summary: score.reason || '暂无评分理由',\n      score_source: 'DeepSeek',\n      status: 'discovered',\n      raw_search_item: item,\n      raw_statistics_item: stats,\n      raw_deepseek_item: score,\n      collected_at: new Date().toISOString(),\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ],
+      "id": "b5ad53dc-759f-4cc5-8423-71d7636e037e",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{ $('搜索YouTube').first().json.items.map(item => item.id.videoId).filter(Boolean).join(',') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "17275a28-8d53-40e1-873d-7347a846621a",
+      "name": "YouTube视频统计",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        220
+      ],
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "EsaFRnRGRPTHifLw",
+          "name": "Query Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer <DEEPSEEK_API_KEY>"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"deepseek-chat\",\n  temperature: 0.2,\n  max_tokens: 1200,\n  messages: [\n    {\n      role: \"system\",\n      content: `你是机器人领域内容情报分析 Agent。你的任务是判断一条候选内容是否值得进入生产流程，分析为什么可能传播，并推荐视频、图片或文字路径。\n必须遵守：只有明显属于机器人领域时 is_robotics 才能为 true；必须结合播放量、点赞、评论、发布时间、来源和 viral_score；不得编造原文没有的信息；不确定信息写入 uncertainty 或 risk_flags；content_type 只能是 video、image、text；language 只能是 zh、en、other；recommended_route 只能是 video_remake、video_adapt、image_remake、text_rewrite、discard；中文视频可 video_remake，英文视频默认 video_adapt，英文重制不是强制步骤；只返回严格JSON对象，不要Markdown或额外解释。`\n    },\n    {\n      role: \"user\",\n      content: JSON.stringify({\n        content_id: $json.content_id,\n        source_url: $json.source_url,\n        title: $json.title,\n        description: $json.description,\n        author: $json.author,\n        published_at: $json.published_at,\n        language: $json.language,\n        content_type: $json.content_type,\n        view_count: $json.view_count,\n        like_count: $json.like_count,\n        comment_count: $json.comment_count,\n        viral_score: $json.viral_score,\n        ai_summary: $json.ai_summary\n      })\n    }\n  ],\n  response_format: { type: \"json_object\" }\n}) }}",
+        "options": {}
+      },
+      "id": "bfbb6735-06ee-4c69-9ca6-740484bf40f0",
+      "name": "DeepSeek热点总结",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const base = $('Code in JavaScript').item.json;\nconst response = $json;\nconst raw = response.choices?.[0]?.message?.content ?? response.content ?? response.text ?? '';\nfunction parse(value) {\n  if (value && typeof value === 'object') return value;\n  if (typeof value !== 'string') return {};\n  const cleaned = value.replace(/^```json\\s*/i, '').replace(/^```\\s*/i, '').replace(/\\s*```$/i, '').trim();\n  try { return JSON.parse(cleaned); } catch (_) {}\n  const m = cleaned.match(/\\{[\\s\\S]*\\}/);\n  if (!m) return {};\n  try { return JSON.parse(m[0]); } catch (_) { return {}; }\n}\nconst a = parse(raw);\nreturn { json: {\n  ...base,\n  is_robotics: a.is_robotics ?? null,\n  robotics_relevance: a.robotics_relevance ?? null,\n  category: a.category ?? null,\n  summary_zh: a.summary_zh ?? null,\n  summary_en: a.summary_en ?? null,\n  key_facts: a.key_facts ?? [],\n  why_it_may_work: a.why_it_may_work ?? null,\n  hook: a.hook ?? null,\n  target_audience: a.target_audience ?? [],\n  analyzed_content_type: a.content_type ?? base.content_type ?? null,\n  analyzed_language: a.language ?? base.language ?? null,\n  recommended_route: a.recommended_route ?? 'discard',\n  priority: a.priority ?? 'C',\n  keep: a.keep ?? false,\n  analysis_confidence: a.confidence ?? null,\n  risk_flags: a.risk_flags ?? [],\n  uncertainty: a.uncertainty ?? [],\n  analysis_status: Object.keys(a).length ? 'analyzed' : 'parse_failed',\n  analyzed_at: new Date().toISOString()\n} }",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "b5661610-32c1-49bc-a7f8-1c0f5a79122b",
+      "name": "解析DeepSeek热点总结",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1360,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $json;\nconst keep = item.is_robotics === true && item.keep === true && Number(item.robotics_relevance || 0) >= 60 && ['S', 'A'].includes(item.priority);\nlet route = 'discard';\nif (keep) {\n  if (item.analyzed_content_type === 'video' && item.analyzed_language === 'zh') route = 'video_remake';\n  else if (item.analyzed_content_type === 'video' && item.analyzed_language === 'en') route = 'video_adapt';\n  else if (item.analyzed_content_type === 'image') route = 'image_remake';\n  else if (item.analyzed_content_type === 'text') route = 'text_rewrite';\n}\nreturn { json: { ...item, keep, final_route: route, next_module: route === 'discard' ? 'archive_or_ignore' : route.startsWith('video') ? 'Video Production' : route.startsWith('image') ? 'Image Production' : 'Text Production', route_decision_at: new Date().toISOString() } };",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "ed378723-5919-4a71-a6d6-d1c1346c37fa",
+      "name": "热点筛选与内容路由",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1600,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "每小时触发": {
+      "main": [
+        [
+          {
+            "node": "搜索YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "搜索YouTube": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek评分",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "YouTube视频统计",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek评分": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "YouTube视频统计": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "DeepSeek热点总结",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DeepSeek热点总结": {
+      "main": [
+        [
+          {
+            "node": "解析DeepSeek热点总结",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "解析DeepSeek热点总结": {
+      "main": [
+        [
+          {
+            "node": "热点筛选与内容路由",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "热点筛选与内容路由": {
+      "main": [
+        [
+          {
+            "node": "存入Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
