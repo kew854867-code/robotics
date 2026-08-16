@@ -78,10 +78,10 @@
 当前 `X发布审批闸门` 的条件是：
 
 ```text
-$json.approval_status == "approved"
+$json.status == "approved"
 ```
 
-主链写回的默认值是 `pending_approval`。只要没有人工把记录改为 `approved`，节点的 true 分支就不会输出到 `准备X发布内容`。这符合严格审批要求，未批准内容不会进入 X。执行 #184 中审批闸门收到 10 条记录，true 分支为 0，false 分支为 9；没有任何 X 发布节点被执行。
+闸门实际读取的是 `status` 字段（不是 `approval_status`）。主链写回的 `content_items.status` 默认是 `draft_generated`（内存中的 `approval_status` 为 `pending_approval`，但 `approval_status` 不是 Supabase 列，也不是闸门条件）。审批扫描分支 `筛选已批准待发布内容` 同样以 `row.status === 'approved'` 判定。因此**批准某条记录 = 在 Supabase 把该 `content_id` 的 `content_items.status` 改为 `approved`**。只要没有人工这样改，节点的 true 分支就不会输出到 `准备X发布内容`。这符合严格审批要求，未批准内容不会进入 X。执行 #184 中审批闸门收到 10 条记录，true 分支为 0，false 分支为 9；没有任何 X 发布节点被执行。
 
 ## 5. Image and X node configuration
 
@@ -114,3 +114,11 @@ $json.approval_status == "approved"
 > 它必须保留 `content_visual_binding_key` 及相关官方资产元数据，使这些字段能够从 `解析官方图片资产` 传到 `断言Supabase更新命中`、`X发布审批闸门` 和 `准备X发布内容`。本次审计没有修改生产工作流。
 
 修复该节点后，应先让主链生成一条记录，再人工批准同一 `content_id`，等待每小时主触发的 approved 扫描分支，最后用同一 `content_id` 检查图片下载、OAuth1 上传和 X 发帖。审计期间没有发送任何测试 X 帖子、邮件，也没有修改生产数据。
+
+## 修复记录（fix applied）
+
+代码复查后确认：`准备内容最终回写` 的现行版本已经用 `...assetFields` 把官方资产字段带进输出，字段真正丢失的位置在下游写库节点 **`更新Supabase完整内容`**——它塞进 `raw_deepseek_item.official_research` 的对象只写了 `official_source_url / official_source_title / official_image_url / asset_source / rights_status / approval_status / x_publish_status`，漏掉了绑定元数据。因此 `approved` 扫描分支只能用 `${content_id}|${official_image_url}` 合成一个假的 `content_visual_binding_key`，并把 `image_title_overlay_language` 硬默认为 `'en'`，使 `准备X发布内容` 的两项校验形同虚设。
+
+本次修复：在 `更新Supabase完整内容` 的 `official_research` 对象中补齐 `content_visual_binding_key`、`image_title_overlay_language`、`image_title_overlay_status`、`asset_kind`、`asset_selection_reason`、`asset_subject`、`asset_match_status`（主副 `activeVersion` 两份节点同步修改）。修复后 `approved` 扫描分支即可从 DB 还原真实的绑定键与图片标题语言，而非合成/默认值。
+
+> 注意：本仓库是导出快照。以上修改在 re-import 到 n8n 后才对线上主工作流生效。审批闸门条件已更正为 `$json.status == "approved"`；批准记录 = 将 `content_items.status` 置为 `approved`。

@@ -1,7 +1,9 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const assert = require('node:assert/strict');
 
-const live = JSON.parse(fs.readFileSync('/home/ubuntu/live_deepseek_business_prompt_output.json', 'utf8')).output;
+const liveFixturePath = path.join(__dirname, '..', 'docs', 'live_deepseek_business_prompt_output.json');
+const live = JSON.parse(fs.readFileSync(liveFixturePath, 'utf8')).output;
 const base = { content_id: 'youtube_business_test_001', title: 'Humanoid robots begin warehouse pilot', view_count: 125000, viral_score: 88 };
 
 function parseDeepSeekObject(response) {
