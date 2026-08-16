@@ -1,0 +1,1556 @@
+{
+  "updatedAt": "2026-08-16T18:00:47.240Z",
+  "createdAt": "2026-08-16T08:18:17.675Z",
+  "id": "2weNZjUiElGl4SDX",
+  "name": "Robot Content Intelligence → X V2 (Clean)",
+  "description": null,
+  "active": true,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "d77afc06-858e-4d33-8a8a-dba937c0ee35",
+      "name": "V2 每小时触发",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -2288,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet"
+            },
+            {
+              "name": "q",
+              "value": "={{$json.search_query}}"
+            },
+            {
+              "name": "type",
+              "value": "video"
+            },
+            {
+              "name": "order",
+              "value": "viewCount"
+            },
+            {
+              "name": "maxResults",
+              "value": "25"
+            },
+            {
+              "name": "key",
+              "value": "<REDACTED>"
+            },
+            {
+              "name": "publishedAfter",
+              "value": "={{$json.published_after}}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "71125971-ed1c-4898-98d2-55f162bd938d",
+      "name": "V2 YouTube 发现",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -2064,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set();\nconst output = [];\nfor (const input of $input.all()) {\n  const payload = input.json || {};\n  for (const r of (Array.isArray(payload.items) ? payload.items : [])) {\n    const videoId = r.id?.videoId;\n    if (!videoId || seen.has(videoId)) continue;\n    seen.add(videoId);\n    output.push({ json: {\n      content_id: `youtube_${videoId}`,\n      video_id: videoId,\n      source: 'YouTube',\n      source_url: `https://www.youtube.com/watch?v=${videoId}`,\n      title: r.snippet?.title || null,\n      description: r.snippet?.description || null,\n      author: r.snippet?.channelTitle || null,\n      channel_id: r.snippet?.channelId || null,\n      published_at: r.snippet?.publishedAt || null,\n      thumbnail: r.snippet?.thumbnails?.high?.url || r.snippet?.thumbnails?.default?.url || null,\n      content_type: 'video',\n      status: 'discovered',\n      search_group: input.json.search_group || null,\n      raw_search_item: r,\n      transcript: null,\n      transcript_source: 'pending'\n    }});\n  }\n}\nreturn output;"
+      },
+      "id": "6b0bcfe6-0bdf-44ef-a724-30d024550e6a",
+      "name": "V2 标准化视频对象",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1824,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/youtube/v3/videos",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,statistics"
+            },
+            {
+              "name": "id",
+              "value": "={{$json.video_id}}"
+            },
+            {
+              "name": "key",
+              "value": "<REDACTED>"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d824a591-433a-4b32-b1d6-6ea4e40234dd",
+      "name": "V2 YouTube 指标",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1584,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const base = $('V2 标准化视频对象').item.json;\nconst stat = $json.items?.[0] || {};\nconst s = stat.statistics || {};\nconst views = Number(s.viewCount || 0);\nconst likes = Number(s.likeCount || 0);\nconst comments = Number(s.commentCount || 0);\nconst engagement = views ? (likes + comments) / views : 0;\nreturn { json: { ...base, view_count: views, like_count: likes, comment_count: comments, favorite_count: Number(s.favoriteCount || 0), engagement: { rate: engagement, views, likes, comments }, viral_score: Math.min(100, Math.round((Math.log10(views + 1) * 12 + engagement * 1000) * 100) / 100), raw_statistics_item: stat, status: 'candidate' } };"
+      },
+      "id": "2da36d2b-d9f1-4510-a806-6bc2f1641045",
+      "name": "V2 合并指标与热点评分",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1344,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.deepseek.com/chat/completions",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "<REDACTED>"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({model: \"deepseek-chat\", temperature: 0.3, messages: [{role: \"system\", content: \"You are a robotics content analyst. Return valid JSON with summary_en, summary_zh, x_text_en, category, commercial_value, confidence, fact_boundary, official_source_query, image_subject.\"}, {role: \"user\", content: JSON.stringify($json)}]}) }}"
+      },
+      "id": "d7095022-6799-417d-a259-ba785201f357",
+      "name": "V2 DeepSeek 故事与 X 文案",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1104,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const base = $('V2 合并指标与热点评分').item.json;\nconst raw = $json.choices?.[0]?.message?.content || '{}';\nlet ai;\ntry { ai = JSON.parse(raw.replace(/^```json\\s*/,'').replace(/\\s*```$/,'')); } catch (e) { ai = { parse_error: true, error: e.message }; }\nconst now = new Date().toISOString();\nreturn { json: { ...base, ...ai, status: 'draft', analysis_status: ai.parse_error ? 'parse_failed' : 'complete', analyzed_at: now, preview_ready: Boolean(ai.x_text_en), x_publish_status: 'not_published', visual: { image_url: null, image_source_url: null, processed_image_url: null, image_headline: ai.image_headline || null, asset_subject: ai.asset_subject || null, asset_match_status: ai.asset_match_status || 'pending_official_source', asset_selection_reason: ai.asset_selection_reason || null }, content_visual_binding_key: null } };"
+      },
+      "id": "3ef70d2b-ccec-4d15-b227-7118f39cbafb",
+      "name": "V2 生成可审核内容包",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -864,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({content_id:$json.content_id, source:$json.source || 'YouTube', source_url:$json.source_url, video_id:$json.video_id, title:$json.title, description:$json.description || null, author:$json.author || null, channel_id:$json.channel_id || null, published_at:$json.published_at || null, thumbnail:$json.thumbnail || null, content_type:$json.content_type || 'video', view_count:Number($json.view_count || 0), like_count:Number($json.like_count || 0), comment_count:Number($json.comment_count || 0), favorite_count:Number($json.favorite_count || 0), engagement:$json.engagement || {}, viral_score:Number($json.viral_score || 0), ai_summary:$json.summary_en || null, status:$json.status || 'draft', category:$json.category || null, summary_zh:$json.summary_zh || null, summary_en:$json.summary_en || null, analysis_confidence:$json.confidence == null ? null : Math.max(0,Math.min(1,Number($json.confidence > 1 ? $json.confidence/100 : $json.confidence))), raw_search_item:$json.raw_search_item || {}, raw_statistics_item:$json.raw_statistics_item || {}, raw_deepseek_item:{commercial_value:$json.commercial_value || null, fact_boundary:$json.fact_boundary || null, official_source_query:$json.official_source_query || null, image_subject:$json.image_subject || null, transcript:$json.transcript || null, transcript_source:$json.transcript_source || null, visual:$json.visual || null, x_text_en:$json.x_text_en || null, official_image_url:$json.official_image_url || null, official_source_url:$json.official_source_url || null, content_visual_binding_key:$json.content_visual_binding_key || null, image_title_overlay_language:$json.image_title_overlay_language || null, image_title_overlay_status:$json.image_title_overlay_status || null, asset_kind:$json.asset_kind || null, asset_selection_reason:$json.asset_selection_reason || null, asset_subject:$json.asset_subject || null, asset_match_status:$json.asset_match_status || null}, analyzed_at:$json.analyzed_at || new Date().toISOString(), updated_at:new Date().toISOString()}) }}"
+      },
+      "id": "1e7c5284-3fbb-4d1e-930e-df4578f04c2b",
+      "name": "V2 写入 Supabase content_items",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -624,
+        -144
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "name": "<EXISTING_CREDENTIAL>",
+          "id": "<REDACTED>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const content = $('V2 官方资产绑定与预览字段').item.json;\nconst raw = content.raw_deepseek_item || {};\nreturn { json: { content_id: content.content_id, route: 'x_image_post', task_type: 'human_review_preview', status: 'queued', input_payload: { source_url: content.source_url, video_id: content.video_id, title: content.title, official_source_url: raw.official_source_url || null, official_image_url: raw.official_image_url || null, content_visual_binding_key: raw.content_visual_binding_key || null }, output_payload: { summary_en: content.summary_en, summary_zh: content.summary_zh, x_text_en: raw.x_text_en || null, official_source_url: raw.official_source_url || null, official_image_url: raw.official_image_url || null, content_visual_binding_key: raw.content_visual_binding_key || null, image_title_overlay_language: raw.image_title_overlay_language || null, image_title_overlay_status: raw.image_title_overlay_status || null, asset_kind: raw.asset_kind || null, asset_selection_reason: raw.asset_selection_reason || null, asset_subject: raw.asset_subject || null, asset_match_status: raw.asset_match_status || null, visual: content.visual || null, preview_ready: content.preview_ready }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } };\n"
+      },
+      "id": "06e7c25e-bf33-4e36-9130-6115e7acd966",
+      "name": "V2 准备审核任务",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -384,
+        -144
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_production_tasks",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({content_id:$json.content_id, route:$json.route || 'x_image_post', task_type:$json.task_type || 'human_review_preview', status:$json.status || 'queued', input_payload:$json.input_payload || {}, output_payload:$json.output_payload || {}, created_at:$json.created_at || new Date().toISOString(), updated_at:new Date().toISOString()}) }}"
+      },
+      "id": "80fe74cd-361a-4a94-a831-60969d6d975f",
+      "name": "V2 写入审核队列",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -144,
+        -144
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "name": "<EXISTING_CREDENTIAL>",
+          "id": "<REDACTED>"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const x = $json;\nconst raw = x.raw_deepseek_item || {};\nconst cutoff = Date.parse('2026-08-01T00:00:00Z');\nconst sourceDate = Date.parse(raw.official_source_published_at || raw.source_published_at || '');\nconst sourceFresh = Number.isFinite(sourceDate) && sourceDate >= cutoff;\nconst subjectMatched = raw.asset_match_status === 'subject_matched_official' && Boolean(raw.official_source_url) && Boolean(raw.official_image_url);\nconst valid = sourceFresh && subjectMatched;\nconst officialImage = valid ? raw.official_image_url : null;\nconst officialSource = valid ? raw.official_source_url : null;\nconst binding = valid ? (raw.content_visual_binding_key || `${x.content_id || x.video_id}|${officialImage}`) : null;\nreturn { json: { ...x, official_image_url: officialImage, official_source_url: officialSource, content_visual_binding_key: binding, image_title_overlay_language: valid ? 'en' : null, image_title_overlay_status: valid ? (raw.image_title_overlay_status || 'official_asset_no_overlay') : null, asset_kind: valid ? (raw.asset_kind || 'official_press_image') : null, asset_selection_reason: valid ? raw.asset_selection_reason : null, asset_subject: valid ? raw.asset_subject : null, asset_match_status: valid ? 'subject_matched_official' : 'needs_manual_visual_review', raw_deepseek_item: { ...raw, official_image_url: officialImage, official_source_url: officialSource, content_visual_binding_key: binding, asset_match_status: valid ? 'subject_matched_official' : 'needs_manual_visual_review', official_source_published_at: raw.official_source_published_at || raw.source_published_at || null } } };\n"
+      },
+      "id": "46776cf5-7db1-4d6b-a0eb-b91e71fbd10a",
+      "name": "V2 官方资产绑定与预览字段",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?status=eq.approved&order=updated_at.desc&limit=1",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "name": "<EXISTING_CREDENTIAL>",
+          "id": "<REDACTED>"
+        }
+      },
+      "id": "5b581699-f873-4c43-8bbd-acb4a20f3adb",
+      "name": "V2 扫描 approved 待发布",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        1500,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "v2-approved",
+              "leftValue": "={{$json.status}}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "647c8d1d-28c8-407f-8e64-9e559417bd0e",
+      "name": "V2 X 发布审批闸门",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1740,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const db = $json;\nconst raw = db.raw_deepseek_item || {};\nconst text = String(raw.x_text_en || db.summary_en || '').trim();\nconst errors = [];\nif (db.status !== 'approved') errors.push('not_approved');\nif (!raw.official_image_url) errors.push('official_image_url_missing');\nif (!raw.official_source_url) errors.push('official_source_url_missing');\nif (!raw.content_visual_binding_key) errors.push('content_visual_binding_missing');\nif (!text) errors.push('x_text_missing');\nif (/^[\\s\\S]*[\\u4e00-\\u9fff]/.test(text)) errors.push('x_text_not_english');\nreturn { json: { ...db, official_image_url: raw.official_image_url || null, official_source_url: raw.official_source_url || null, content_visual_binding_key: raw.content_visual_binding_key || null, image_title_overlay_language: raw.image_title_overlay_language || null, x_text_en: text, x_validation_errors: errors, x_publish_status: errors.length ? 'blocked_validation' : 'ready_to_publish' } };\n"
+      },
+      "id": "e3d6ec3e-0c37-49d2-98fd-820a6ab3cae6",
+      "name": "V2 准备 X 发布内容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$json.official_image_url}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "29a54580-54b1-4a9d-8734-20dba477c7de",
+      "name": "V2 下载官方图片二进制",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2220,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.com/2/media/upload",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twitterOAuth1Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "media",
+              "inputDataFieldName": "data"
+            },
+            {
+              "parameterType": "formData",
+              "name": "media_category",
+              "value": "tweet_image"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "twitterOAuth1Api": {
+          "name": "<EXISTING_CREDENTIAL>",
+          "id": "<REDACTED>"
+        }
+      },
+      "id": "54e072f8-50f9-4c9f-b430-eb49e8686e5b",
+      "name": "V2 X OAuth1 上传官方图片",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2460,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.x.com/2/tweets",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "twitterOAuth1Api",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: $(\"V2 准备 X 发布内容\").item.json.x_text_en, media: { media_ids: [$json.data.id] } }) }}",
+        "options": {}
+      },
+      "credentials": {
+        "twitterOAuth1Api": {
+          "name": "<EXISTING_CREDENTIAL>",
+          "id": "<REDACTED>"
+        }
+      },
+      "id": "06e74ae5-911b-475f-919c-21e59ad103d7",
+      "name": "V2 X 发布图片帖子",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        2700,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "id": "532d80ec-884e-4990-be3c-d292ff635cf8",
+      "name": "V2 每小时发布扫描",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1260,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const cutoff = Date.parse('2026-08-01T00:00:00Z');\nconst MIN_VIEWS = 1000000;\nconst MIN_LIKES = 10000;\nreturn $input.all().map((item, index) => {\n  const x = item.json || {};\n  const published = Date.parse(x.published_at || x.publishedAt || '');\n  const views = Number(x.view_count || 0);\n  const likes = Number(x.like_count || 0);\n  return { item, index, published, views, likes };\n}).filter(({published, views, likes}) => Number.isFinite(published) && published >= cutoff && views >= MIN_VIEWS && likes >= MIN_LIKES).map(({item, index}) => ({ json: { ...item.json, hotspot_filter: { min_published_at: '2026-08-01T00:00:00Z', min_views: MIN_VIEWS, min_likes: MIN_LIKES, passed: true } }, pairedItem: { item: index } }));"
+      },
+      "id": "263aa9c0-1f04-4ef9-af55-f1531949bbcd",
+      "name": "V2 热点硬门槛",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const queries = [\n  'Boston Dynamics Atlas robot',\n  'Unitree G1 G1 humanoid robot',\n  'Figure AI humanoid robot',\n  'Agility Digit humanoid robot',\n  'Tesla Optimus robot',\n  'humanoid robot launch OR robot demonstration',\n  'embodied AI physical AI robot learning',\n  'robot competition robot factory robot manipulation'\n];\nreturn queries.map(search_query => ({ json: { search_query, search_group: search_query, published_after: '2026-08-01T00:00:00Z' } }));"
+      },
+      "id": "855e8038-ae1d-4b4e-a5e6-64d959597b0a",
+      "name": "V2 多主题查询计划",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "V2 每小时触发": {
+      "main": [
+        [
+          {
+            "node": "V2 多主题查询计划",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 YouTube 发现": {
+      "main": [
+        [
+          {
+            "node": "V2 标准化视频对象",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 标准化视频对象": {
+      "main": [
+        [
+          {
+            "node": "V2 YouTube 指标",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 YouTube 指标": {
+      "main": [
+        [
+          {
+            "node": "V2 合并指标与热点评分",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 合并指标与热点评分": {
+      "main": [
+        [
+          {
+            "node": "V2 热点硬门槛",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 DeepSeek 故事与 X 文案": {
+      "main": [
+        [
+          {
+            "node": "V2 生成可审核内容包",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 生成可审核内容包": {
+      "main": [
+        [
+          {
+            "node": "V2 官方资产绑定与预览字段",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 写入 Supabase content_items": {
+      "main": [
+        [
+          {
+            "node": "V2 准备审核任务",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 准备审核任务": {
+      "main": [
+        [
+          {
+            "node": "V2 写入审核队列",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 官方资产绑定与预览字段": {
+      "main": [
+        [
+          {
+            "node": "V2 写入 Supabase content_items",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 扫描 approved 待发布": {
+      "main": [
+        [
+          {
+            "node": "V2 X 发布审批闸门",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 X 发布审批闸门": {
+      "main": [
+        [
+          {
+            "node": "V2 准备 X 发布内容",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "V2 准备 X 发布内容": {
+      "main": [
+        [
+          {
+            "node": "V2 下载官方图片二进制",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 下载官方图片二进制": {
+      "main": [
+        [
+          {
+            "node": "V2 X OAuth1 上传官方图片",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 X OAuth1 上传官方图片": {
+      "main": [
+        [
+          {
+            "node": "V2 X 发布图片帖子",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 每小时发布扫描": {
+      "main": [
+        [
+          {
+            "node": "V2 扫描 approved 待发布",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 热点硬门槛": {
+      "main": [
+        [
+          {
+            "node": "V2 DeepSeek 故事与 X 文案",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "V2 多主题查询计划": {
+      "main": [
+        [
+          {
+            "node": "V2 YouTube 发现",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "staticData": {
+    "node:V2 每小时触发": {
+      "recurrenceRules": [
+        null
+      ],
+      "recurrenceRuleSignatures": [
+        null
+      ]
+    },
+    "node:V2 每小时发布扫描": {
+      "recurrenceRules": [
+        null
+      ],
+      "recurrenceRuleSignatures": [
+        null
+      ]
+    }
+  },
+  "meta": null,
+  "nodeGroups": [],
+  "pinData": {},
+  "versionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+  "activeVersionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+  "versionCounter": 43,
+  "triggerCount": 2,
+  "sourceWorkflowId": null,
+  "shared": [
+    {
+      "updatedAt": "2026-08-16T08:18:17.675Z",
+      "createdAt": "2026-08-16T08:18:17.675Z",
+      "role": "workflow:owner",
+      "workflowId": "2weNZjUiElGl4SDX",
+      "projectId": "TfZSb4U99DiCLWNX",
+      "project": {
+        "updatedAt": "2026-08-13T07:27:47.453Z",
+        "createdAt": "2026-08-13T07:05:00.094Z",
+        "id": "TfZSb4U99DiCLWNX",
+        "name": "KE WANG <kew854867@gmail.com>",
+        "type": "personal",
+        "icon": null,
+        "description": null,
+        "customTelemetryTags": [],
+        "creatorId": "b1dba454-5043-4566-9ac8-6d33dcbd0eac"
+      }
+    }
+  ],
+  "tags": [],
+  "activeVersion": {
+    "updatedAt": "2026-08-16T18:00:47.255Z",
+    "createdAt": "2026-08-16T18:00:47.255Z",
+    "versionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+    "workflowId": "2weNZjUiElGl4SDX",
+    "nodes": [
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "id": "d77afc06-858e-4d33-8a8a-dba937c0ee35",
+        "name": "V2 每小时触发",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          -2288,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/youtube/v3/search",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "part",
+                "value": "snippet"
+              },
+              {
+                "name": "q",
+                "value": "={{$json.search_query}}"
+              },
+              {
+                "name": "type",
+                "value": "video"
+              },
+              {
+                "name": "order",
+                "value": "viewCount"
+              },
+              {
+                "name": "maxResults",
+                "value": "25"
+              },
+              {
+                "name": "key",
+                "value": "<REDACTED>"
+              },
+              {
+                "name": "publishedAfter",
+                "value": "={{$json.published_after}}"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "71125971-ed1c-4898-98d2-55f162bd938d",
+        "name": "V2 YouTube 发现",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -2064,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "jsCode": "const seen = new Set();\nconst output = [];\nfor (const input of $input.all()) {\n  const payload = input.json || {};\n  for (const r of (Array.isArray(payload.items) ? payload.items : [])) {\n    const videoId = r.id?.videoId;\n    if (!videoId || seen.has(videoId)) continue;\n    seen.add(videoId);\n    output.push({ json: {\n      content_id: `youtube_${videoId}`,\n      video_id: videoId,\n      source: 'YouTube',\n      source_url: `https://www.youtube.com/watch?v=${videoId}`,\n      title: r.snippet?.title || null,\n      description: r.snippet?.description || null,\n      author: r.snippet?.channelTitle || null,\n      channel_id: r.snippet?.channelId || null,\n      published_at: r.snippet?.publishedAt || null,\n      thumbnail: r.snippet?.thumbnails?.high?.url || r.snippet?.thumbnails?.default?.url || null,\n      content_type: 'video',\n      status: 'discovered',\n      search_group: input.json.search_group || null,\n      raw_search_item: r,\n      transcript: null,\n      transcript_source: 'pending'\n    }});\n  }\n}\nreturn output;"
+        },
+        "id": "6b0bcfe6-0bdf-44ef-a724-30d024550e6a",
+        "name": "V2 标准化视频对象",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1824,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "url": "https://www.googleapis.com/youtube/v3/videos",
+          "sendQuery": true,
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "part",
+                "value": "snippet,statistics"
+              },
+              {
+                "name": "id",
+                "value": "={{$json.video_id}}"
+              },
+              {
+                "name": "key",
+                "value": "<REDACTED>"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "id": "d824a591-433a-4b32-b1d6-6ea4e40234dd",
+        "name": "V2 YouTube 指标",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1584,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const base = $('V2 标准化视频对象').item.json;\nconst stat = $json.items?.[0] || {};\nconst s = stat.statistics || {};\nconst views = Number(s.viewCount || 0);\nconst likes = Number(s.likeCount || 0);\nconst comments = Number(s.commentCount || 0);\nconst engagement = views ? (likes + comments) / views : 0;\nreturn { json: { ...base, view_count: views, like_count: likes, comment_count: comments, favorite_count: Number(s.favoriteCount || 0), engagement: { rate: engagement, views, likes, comments }, viral_score: Math.min(100, Math.round((Math.log10(views + 1) * 12 + engagement * 1000) * 100) / 100), raw_statistics_item: stat, status: 'candidate' } };"
+        },
+        "id": "2da36d2b-d9f1-4510-a806-6bc2f1641045",
+        "name": "V2 合并指标与热点评分",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -1344,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.deepseek.com/chat/completions",
+          "authentication": "none",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Authorization",
+                "value": "<REDACTED>"
+              }
+            ]
+          },
+          "sendBody": true,
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          },
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({model: \"deepseek-chat\", temperature: 0.3, messages: [{role: \"system\", content: \"You are a robotics content analyst. Return valid JSON with summary_en, summary_zh, x_text_en, category, commercial_value, confidence, fact_boundary, official_source_query, image_subject.\"}, {role: \"user\", content: JSON.stringify($json)}]}) }}"
+        },
+        "id": "d7095022-6799-417d-a259-ba785201f357",
+        "name": "V2 DeepSeek 故事与 X 文案",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -1104,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const base = $('V2 合并指标与热点评分').item.json;\nconst raw = $json.choices?.[0]?.message?.content || '{}';\nlet ai;\ntry { ai = JSON.parse(raw.replace(/^```json\\s*/,'').replace(/\\s*```$/,'')); } catch (e) { ai = { parse_error: true, error: e.message }; }\nconst now = new Date().toISOString();\nreturn { json: { ...base, ...ai, status: 'draft', analysis_status: ai.parse_error ? 'parse_failed' : 'complete', analyzed_at: now, preview_ready: Boolean(ai.x_text_en), x_publish_status: 'not_published', visual: { image_url: null, image_source_url: null, processed_image_url: null, image_headline: ai.image_headline || null, asset_subject: ai.asset_subject || null, asset_match_status: ai.asset_match_status || 'pending_official_source', asset_selection_reason: ai.asset_selection_reason || null }, content_visual_binding_key: null } };"
+        },
+        "id": "3ef70d2b-ccec-4d15-b227-7118f39cbafb",
+        "name": "V2 生成可审核内容包",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -864,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "resolution=merge-duplicates,return=representation"
+              }
+            ]
+          },
+          "sendBody": true,
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          },
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({content_id:$json.content_id, source:$json.source || 'YouTube', source_url:$json.source_url, video_id:$json.video_id, title:$json.title, description:$json.description || null, author:$json.author || null, channel_id:$json.channel_id || null, published_at:$json.published_at || null, thumbnail:$json.thumbnail || null, content_type:$json.content_type || 'video', view_count:Number($json.view_count || 0), like_count:Number($json.like_count || 0), comment_count:Number($json.comment_count || 0), favorite_count:Number($json.favorite_count || 0), engagement:$json.engagement || {}, viral_score:Number($json.viral_score || 0), ai_summary:$json.summary_en || null, status:$json.status || 'draft', category:$json.category || null, summary_zh:$json.summary_zh || null, summary_en:$json.summary_en || null, analysis_confidence:$json.confidence == null ? null : Math.max(0,Math.min(1,Number($json.confidence > 1 ? $json.confidence/100 : $json.confidence))), raw_search_item:$json.raw_search_item || {}, raw_statistics_item:$json.raw_statistics_item || {}, raw_deepseek_item:{commercial_value:$json.commercial_value || null, fact_boundary:$json.fact_boundary || null, official_source_query:$json.official_source_query || null, image_subject:$json.image_subject || null, transcript:$json.transcript || null, transcript_source:$json.transcript_source || null, visual:$json.visual || null, x_text_en:$json.x_text_en || null, official_image_url:$json.official_image_url || null, official_source_url:$json.official_source_url || null, content_visual_binding_key:$json.content_visual_binding_key || null, image_title_overlay_language:$json.image_title_overlay_language || null, image_title_overlay_status:$json.image_title_overlay_status || null, asset_kind:$json.asset_kind || null, asset_selection_reason:$json.asset_selection_reason || null, asset_subject:$json.asset_subject || null, asset_match_status:$json.asset_match_status || null}, analyzed_at:$json.analyzed_at || new Date().toISOString(), updated_at:new Date().toISOString()}) }}"
+        },
+        "id": "1e7c5284-3fbb-4d1e-930e-df4578f04c2b",
+        "name": "V2 写入 Supabase content_items",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -624,
+          -144
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "name": "<EXISTING_CREDENTIAL>",
+            "id": "<REDACTED>"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const content = $('V2 官方资产绑定与预览字段').item.json;\nconst raw = content.raw_deepseek_item || {};\nreturn { json: { content_id: content.content_id, route: 'x_image_post', task_type: 'human_review_preview', status: 'queued', input_payload: { source_url: content.source_url, video_id: content.video_id, title: content.title, official_source_url: raw.official_source_url || null, official_image_url: raw.official_image_url || null, content_visual_binding_key: raw.content_visual_binding_key || null }, output_payload: { summary_en: content.summary_en, summary_zh: content.summary_zh, x_text_en: raw.x_text_en || null, official_source_url: raw.official_source_url || null, official_image_url: raw.official_image_url || null, content_visual_binding_key: raw.content_visual_binding_key || null, image_title_overlay_language: raw.image_title_overlay_language || null, image_title_overlay_status: raw.image_title_overlay_status || null, asset_kind: raw.asset_kind || null, asset_selection_reason: raw.asset_selection_reason || null, asset_subject: raw.asset_subject || null, asset_match_status: raw.asset_match_status || null, visual: content.visual || null, preview_ready: content.preview_ready }, created_at: new Date().toISOString(), updated_at: new Date().toISOString() } };\n"
+        },
+        "id": "06e7c25e-bf33-4e36-9130-6115e7acd966",
+        "name": "V2 准备审核任务",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -384,
+          -144
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_production_tasks",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Prefer",
+                "value": "return=representation"
+              }
+            ]
+          },
+          "sendBody": true,
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          },
+          "contentType": "json",
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({content_id:$json.content_id, route:$json.route || 'x_image_post', task_type:$json.task_type || 'human_review_preview', status:$json.status || 'queued', input_payload:$json.input_payload || {}, output_payload:$json.output_payload || {}, created_at:$json.created_at || new Date().toISOString(), updated_at:new Date().toISOString()}) }}"
+        },
+        "id": "80fe74cd-361a-4a94-a831-60969d6d975f",
+        "name": "V2 写入审核队列",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": [
+          -144,
+          -144
+        ],
+        "credentials": {
+          "supabaseApi": {
+            "name": "<EXISTING_CREDENTIAL>",
+            "id": "<REDACTED>"
+          }
+        }
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const x = $json;\nconst raw = x.raw_deepseek_item || {};\nconst cutoff = Date.parse('2026-08-01T00:00:00Z');\nconst sourceDate = Date.parse(raw.official_source_published_at || raw.source_published_at || '');\nconst sourceFresh = Number.isFinite(sourceDate) && sourceDate >= cutoff;\nconst subjectMatched = raw.asset_match_status === 'subject_matched_official' && Boolean(raw.official_source_url) && Boolean(raw.official_image_url);\nconst valid = sourceFresh && subjectMatched;\nconst officialImage = valid ? raw.official_image_url : null;\nconst officialSource = valid ? raw.official_source_url : null;\nconst binding = valid ? (raw.content_visual_binding_key || `${x.content_id || x.video_id}|${officialImage}`) : null;\nreturn { json: { ...x, official_image_url: officialImage, official_source_url: officialSource, content_visual_binding_key: binding, image_title_overlay_language: valid ? 'en' : null, image_title_overlay_status: valid ? (raw.image_title_overlay_status || 'official_asset_no_overlay') : null, asset_kind: valid ? (raw.asset_kind || 'official_press_image') : null, asset_selection_reason: valid ? raw.asset_selection_reason : null, asset_subject: valid ? raw.asset_subject : null, asset_match_status: valid ? 'subject_matched_official' : 'needs_manual_visual_review', raw_deepseek_item: { ...raw, official_image_url: officialImage, official_source_url: officialSource, content_visual_binding_key: binding, asset_match_status: valid ? 'subject_matched_official' : 'needs_manual_visual_review', official_source_published_at: raw.official_source_published_at || raw.source_published_at || null } } };\n"
+        },
+        "id": "46776cf5-7db1-4d6b-a0eb-b91e71fbd10a",
+        "name": "V2 官方资产绑定与预览字段",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1500,
+          160
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "https://phkofgjhrbloskffifox.supabase.co/rest/v1/content_items?status=eq.approved&order=updated_at.desc&limit=1",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "supabaseApi",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Accept",
+                "value": "application/json"
+              }
+            ]
+          },
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "json"
+              }
+            }
+          }
+        },
+        "credentials": {
+          "supabaseApi": {
+            "name": "<EXISTING_CREDENTIAL>",
+            "id": "<REDACTED>"
+          }
+        },
+        "id": "5b581699-f873-4c43-8bbd-acb4a20f3adb",
+        "name": "V2 扫描 approved 待发布",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          1500,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": {
+              "caseSensitive": true,
+              "typeValidation": "strict",
+              "version": 2
+            },
+            "conditions": [
+              {
+                "id": "v2-approved",
+                "leftValue": "={{$json.status}}",
+                "rightValue": "approved",
+                "operator": {
+                  "type": "string",
+                  "operation": "equals"
+                }
+              }
+            ],
+            "combinator": "and"
+          }
+        },
+        "id": "647c8d1d-28c8-407f-8e64-9e559417bd0e",
+        "name": "V2 X 发布审批闸门",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2.2,
+        "position": [
+          1740,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForEachItem",
+          "jsCode": "const db = $json;\nconst raw = db.raw_deepseek_item || {};\nconst text = String(raw.x_text_en || db.summary_en || '').trim();\nconst errors = [];\nif (db.status !== 'approved') errors.push('not_approved');\nif (!raw.official_image_url) errors.push('official_image_url_missing');\nif (!raw.official_source_url) errors.push('official_source_url_missing');\nif (!raw.content_visual_binding_key) errors.push('content_visual_binding_missing');\nif (!text) errors.push('x_text_missing');\nif (/^[\\s\\S]*[\\u4e00-\\u9fff]/.test(text)) errors.push('x_text_not_english');\nreturn { json: { ...db, official_image_url: raw.official_image_url || null, official_source_url: raw.official_source_url || null, content_visual_binding_key: raw.content_visual_binding_key || null, image_title_overlay_language: raw.image_title_overlay_language || null, x_text_en: text, x_validation_errors: errors, x_publish_status: errors.length ? 'blocked_validation' : 'ready_to_publish' } };\n"
+        },
+        "id": "e3d6ec3e-0c37-49d2-98fd-820a6ab3cae6",
+        "name": "V2 准备 X 发布内容",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          1980,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "method": "GET",
+          "url": "={{$json.official_image_url}}",
+          "options": {
+            "response": {
+              "response": {
+                "responseFormat": "file"
+              }
+            }
+          }
+        },
+        "id": "29a54580-54b1-4a9d-8734-20dba477c7de",
+        "name": "V2 下载官方图片二进制",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2220,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.x.com/2/media/upload",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "twitterOAuth1Api",
+          "sendBody": true,
+          "contentType": "multipart-form-data",
+          "bodyParameters": {
+            "parameters": [
+              {
+                "parameterType": "formBinaryData",
+                "name": "media",
+                "inputDataFieldName": "data"
+              },
+              {
+                "parameterType": "formData",
+                "name": "media_category",
+                "value": "tweet_image"
+              }
+            ]
+          },
+          "options": {}
+        },
+        "credentials": {
+          "twitterOAuth1Api": {
+            "name": "<EXISTING_CREDENTIAL>",
+            "id": "<REDACTED>"
+          }
+        },
+        "id": "54e072f8-50f9-4c9f-b430-eb49e8686e5b",
+        "name": "V2 X OAuth1 上传官方图片",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2460,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://api.x.com/2/tweets",
+          "authentication": "predefinedCredentialType",
+          "nodeCredentialType": "twitterOAuth1Api",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ text: $(\"V2 准备 X 发布内容\").item.json.x_text_en, media: { media_ids: [$json.data.id] } }) }}",
+          "options": {}
+        },
+        "credentials": {
+          "twitterOAuth1Api": {
+            "name": "<EXISTING_CREDENTIAL>",
+            "id": "<REDACTED>"
+          }
+        },
+        "id": "06e74ae5-911b-475f-919c-21e59ad103d7",
+        "name": "V2 X 发布图片帖子",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.5,
+        "position": [
+          2700,
+          420
+        ]
+      },
+      {
+        "parameters": {
+          "rule": {
+            "interval": [
+              {
+                "field": "hours"
+              }
+            ]
+          }
+        },
+        "id": "532d80ec-884e-4990-be3c-d292ff635cf8",
+        "name": "V2 每小时发布扫描",
+        "type": "n8n-nodes-base.scheduleTrigger",
+        "typeVersion": 1.2,
+        "position": [
+          1260,
+          620
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const cutoff = Date.parse('2026-08-01T00:00:00Z');\nconst MIN_VIEWS = 1000000;\nconst MIN_LIKES = 10000;\nreturn $input.all().map((item, index) => {\n  const x = item.json || {};\n  const published = Date.parse(x.published_at || x.publishedAt || '');\n  const views = Number(x.view_count || 0);\n  const likes = Number(x.like_count || 0);\n  return { item, index, published, views, likes };\n}).filter(({published, views, likes}) => Number.isFinite(published) && published >= cutoff && views >= MIN_VIEWS && likes >= MIN_LIKES).map(({item, index}) => ({ json: { ...item.json, hotspot_filter: { min_published_at: '2026-08-01T00:00:00Z', min_views: MIN_VIEWS, min_likes: MIN_LIKES, passed: true } }, pairedItem: { item: index } }));"
+        },
+        "id": "263aa9c0-1f04-4ef9-af55-f1531949bbcd",
+        "name": "V2 热点硬门槛",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          520,
+          0
+        ]
+      },
+      {
+        "parameters": {
+          "mode": "runOnceForAllItems",
+          "jsCode": "const queries = [\n  'Boston Dynamics Atlas robot',\n  'Unitree G1 G1 humanoid robot',\n  'Figure AI humanoid robot',\n  'Agility Digit humanoid robot',\n  'Tesla Optimus robot',\n  'humanoid robot launch OR robot demonstration',\n  'embodied AI physical AI robot learning',\n  'robot competition robot factory robot manipulation'\n];\nreturn queries.map(search_query => ({ json: { search_query, search_group: search_query, published_after: '2026-08-01T00:00:00Z' } }));"
+        },
+        "id": "855e8038-ae1d-4b4e-a5e6-64d959597b0a",
+        "name": "V2 多主题查询计划",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [
+          -520,
+          0
+        ]
+      }
+    ],
+    "connections": {
+      "V2 每小时触发": {
+        "main": [
+          [
+            {
+              "node": "V2 多主题查询计划",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 YouTube 发现": {
+        "main": [
+          [
+            {
+              "node": "V2 标准化视频对象",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 标准化视频对象": {
+        "main": [
+          [
+            {
+              "node": "V2 YouTube 指标",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 YouTube 指标": {
+        "main": [
+          [
+            {
+              "node": "V2 合并指标与热点评分",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 合并指标与热点评分": {
+        "main": [
+          [
+            {
+              "node": "V2 热点硬门槛",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 DeepSeek 故事与 X 文案": {
+        "main": [
+          [
+            {
+              "node": "V2 生成可审核内容包",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 生成可审核内容包": {
+        "main": [
+          [
+            {
+              "node": "V2 官方资产绑定与预览字段",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 写入 Supabase content_items": {
+        "main": [
+          [
+            {
+              "node": "V2 准备审核任务",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 准备审核任务": {
+        "main": [
+          [
+            {
+              "node": "V2 写入审核队列",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 官方资产绑定与预览字段": {
+        "main": [
+          [
+            {
+              "node": "V2 写入 Supabase content_items",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 扫描 approved 待发布": {
+        "main": [
+          [
+            {
+              "node": "V2 X 发布审批闸门",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 X 发布审批闸门": {
+        "main": [
+          [
+            {
+              "node": "V2 准备 X 发布内容",
+              "type": "main",
+              "index": 0
+            }
+          ],
+          []
+        ]
+      },
+      "V2 准备 X 发布内容": {
+        "main": [
+          [
+            {
+              "node": "V2 下载官方图片二进制",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 下载官方图片二进制": {
+        "main": [
+          [
+            {
+              "node": "V2 X OAuth1 上传官方图片",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 X OAuth1 上传官方图片": {
+        "main": [
+          [
+            {
+              "node": "V2 X 发布图片帖子",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 每小时发布扫描": {
+        "main": [
+          [
+            {
+              "node": "V2 扫描 approved 待发布",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 热点硬门槛": {
+        "main": [
+          [
+            {
+              "node": "V2 DeepSeek 故事与 X 文案",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      },
+      "V2 多主题查询计划": {
+        "main": [
+          [
+            {
+              "node": "V2 YouTube 发现",
+              "type": "main",
+              "index": 0
+            }
+          ]
+        ]
+      }
+    },
+    "nodeGroups": [],
+    "authors": "KE WANG",
+    "name": null,
+    "description": null,
+    "autosaved": false,
+    "workflowPublishHistory": [
+      {
+        "createdAt": "2026-08-16T18:00:50.203Z",
+        "id": 308,
+        "workflowId": "2weNZjUiElGl4SDX",
+        "versionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+        "event": "deactivated",
+        "userId": "b1dba454-5043-4566-9ac8-6d33dcbd0eac"
+      },
+      {
+        "createdAt": "2026-08-16T18:00:50.318Z",
+        "id": 309,
+        "workflowId": "2weNZjUiElGl4SDX",
+        "versionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+        "event": "activated",
+        "userId": "b1dba454-5043-4566-9ac8-6d33dcbd0eac"
+      },
+      {
+        "createdAt": "2026-08-16T18:00:47.563Z",
+        "id": 307,
+        "workflowId": "2weNZjUiElGl4SDX",
+        "versionId": "70b2acb2-6633-440c-be0a-4d1419c5de57",
+        "event": "activated",
+        "userId": "b1dba454-5043-4566-9ac8-6d33dcbd0eac"
+      }
+    ]
+  }
+}
